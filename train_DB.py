@@ -31,11 +31,11 @@ PREPROCESSED_YAML = 'DB預處理_dataset.yaml'
 TRAIN_CONFIG = {
     'base_model': 'yolov8n.pt',
     'data_yaml': DATASET_YAML,
-    'epochs': 50,
+    'epochs': 200,        # 最大訓練輪數（設定為80，確保至少能跑30次）
     'imgsz': 640,
     'batch': 16,
     'name': 'DB_cell_detection1',
-    'patience': 25,
+    'patience': 20,     # 早停耐心值（從25增加到80，避免過早停止）
 }
 
 # 資料擴增配置

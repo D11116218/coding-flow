@@ -19,7 +19,7 @@ PREPROCESSED_FOLDER = '預處理'   # 預處理後的圖片資料夾
 IMAGE_EXTENSIONS = ['*.jpg', '*.jpeg', '*.png', '*.JPG', '*.JPEG', '*.PNG']
 
 # 模型路徑
-MODEL_PATH = 'runs/detect/DB_cell_detection12/weights/best.pt'
+MODEL_PATH = 'runs/detect/DB_cell_detection15/weights/best.pt'
 
 # 預處理設定
 USE_PREPROCESSING = True  # True = 使用預處理，False = 使用原始圖片
@@ -35,6 +35,9 @@ FILTER_CONFIG = {
     },
     # YOLO 模型層使用最低的信心度值（確保所有類別都能通過）
     'yolo_conf_threshold': 0.001,  # 使用所有類別中的最低值
+    # NMS（非極大值抑制）參數：過濾重疊的檢測框
+    'yolo_iou_threshold': 0.05,  # YOLO 內建 NMS IoU 閾值（只在同類別內過濾）
+    'cross_class_iou_threshold': 0.3,  # 跨類別 NMS IoU 閾值（處理不同類別之間的重疊，如 cell 和 point）
     
     # 面積過濾
     'min_area_by_class': {
@@ -162,9 +165,14 @@ def ensure_folders():
 # 偵測和過濾函數
 # ============================================================================
 
-def detect_objects(model, detection_image, conf_threshold):
+def detect_objects(model, detection_image, conf_threshold, iou_threshold):
     """使用 YOLO 模型偵測物體"""
-    results = model(detection_image, conf=conf_threshold, verbose=False)
+    results = model(
+        detection_image, 
+        conf=conf_threshold, 
+        iou=iou_threshold,  # NMS IoU 閾值：過濾重疊的檢測框
+        verbose=False
+    )
     detections = results[0]
     num_boxes = len(detections.boxes) if detections.boxes is not None else 0
     return detections, num_boxes
@@ -230,6 +238,57 @@ def validate_and_clip_coordinates(obj, imgwidth, imgheight):
     })
     
     return obj
+
+def calculate_iou(box1, box2):
+    """計算兩個檢測框之間的 IoU（Intersection over Union）"""
+    x1_1, y1_1, x2_1, y2_1 = box1['x1'], box1['y1'], box1['x2'], box1['y2']
+    x1_2, y1_2, x2_2, y2_2 = box2['x1'], box2['y1'], box2['x2'], box2['y2']
+    
+    # 計算交集區域
+    x1_inter = max(x1_1, x1_2)
+    y1_inter = max(y1_1, y1_2)
+    x2_inter = min(x2_1, x2_2)
+    y2_inter = min(y2_1, y2_2)
+    
+    if x2_inter <= x1_inter or y2_inter <= y1_inter:
+        return 0.0
+    
+    inter_area = (x2_inter - x1_inter) * (y2_inter - y1_inter)
+    
+    # 計算並集區域
+    area1 = (x2_1 - x1_1) * (y2_1 - y1_1)
+    area2 = (x2_2 - x1_2) * (y2_2 - y1_2)
+    union_area = area1 + area2 - inter_area
+    
+    if union_area == 0:
+        return 0.0
+    
+    return inter_area / union_area
+
+def apply_cross_class_nms(detected_objects, iou_threshold):
+    """應用跨類別 NMS，過濾不同類別之間重疊的檢測框"""
+    if len(detected_objects) <= 1:
+        return detected_objects
+    
+    # 按信心度降序排序
+    sorted_objects = sorted(detected_objects, key=lambda x: x['confidence'], reverse=True)
+    keep = []
+    
+    while sorted_objects:
+        # 取出信心度最高的框
+        current = sorted_objects.pop(0)
+        keep.append(current)
+        
+        # 過濾與當前框重疊的其他框（不論類別）
+        remaining = []
+        for obj in sorted_objects:
+            iou = calculate_iou(current, obj)
+            if iou <= iou_threshold:
+                remaining.append(obj)
+        
+        sorted_objects = remaining
+    
+    return keep
 
 def filter_detections(detections, imgwidth, imgheight):
     """過濾偵測結果（包含第一次和第二次信心度過濾）"""
@@ -377,11 +436,30 @@ def process_image(image_path, model):
         detection_image = image_src
     
     # YOLO 偵測
-    detections, num_boxes = detect_objects(model, detection_image, FILTER_CONFIG['yolo_conf_threshold'])
+    detections, num_boxes = detect_objects(
+        model, 
+        detection_image, 
+        FILTER_CONFIG['yolo_conf_threshold'],
+        FILTER_CONFIG['yolo_iou_threshold']  # 加入 IoU 閾值以過濾重疊框
+    )
     print_detection_info(detections, num_boxes)
     
     # 過濾偵測結果
     detected_objects, class_counts = filter_detections(detections, imgwidth, imgheight)
+    
+    # 應用跨類別 NMS，過濾不同類別之間重疊的框（如 cell 和 point）
+    detected_objects = apply_cross_class_nms(
+        detected_objects, 
+        FILTER_CONFIG['cross_class_iou_threshold']
+    )
+    
+    # 重新計算類別計數
+    class_counts = {'RFID': 0, 'cell': 0, 'point': 0}
+    for obj in detected_objects:
+        class_name = obj['class']
+        if class_name in class_counts:
+            class_counts[class_name] += 1
+    
     print(f"  過濾後結果 - RFID: {class_counts['RFID']}, cell: {class_counts['cell']}, point: {class_counts['point']} (原始偵測: {num_boxes} 個)")
     
     # 在圖片上標記
