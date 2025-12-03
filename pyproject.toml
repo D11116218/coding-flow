@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "bb"
+version = "0.1.0"
+description = "YOLO v8 細胞偵測模型訓練專案"
+authors = ["Your Name <you@example.com>"]
+
+[tool.poetry.dependencies]
+python = ">=3.12,<3.13"
+ultralytics = "*"
+opencv-python = "*"
+numpy = "*"
+
+[tool.poetry.group.dev.dependencies]
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+

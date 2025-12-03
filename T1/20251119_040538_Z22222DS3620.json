@@ -1,0 +1,301 @@
+{
+  "version": "3.2.2",
+  "flags": {},
+  "shapes": [
+    {
+      "kie_linking": [],
+      "label": "RFID",
+      "score": null,
+      "points": [
+        [
+          124.99999999999994,
+          69.99999999999996
+        ],
+        [
+          353.57142857142856,
+          69.99999999999996
+        ],
+        [
+          353.57142857142856,
+          300.71428571428567
+        ],
+        [
+          124.99999999999994,
+          300.71428571428567
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "difficult": false,
+      "shape_type": "rectangle",
+      "flags": {},
+      "attributes": {}
+    },
+    {
+      "kie_linking": [],
+      "label": "cell",
+      "score": null,
+      "points": [
+        [
+          475.3676470588235,
+          453.67647058823525
+        ],
+        [
+          488.05147058823525,
+          453.67647058823525
+        ],
+        [
+          488.05147058823525,
+          467.27941176470586
+        ],
+        [
+          475.3676470588235,
+          467.27941176470586
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "difficult": false,
+      "shape_type": "rectangle",
+      "flags": {},
+      "attributes": {}
+    },
+    {
+      "kie_linking": [],
+      "label": "cell",
+      "score": null,
+      "points": [
+        [
+          495.40441176470586,
+          462.6838235294117
+        ],
+        [
+          504.4117647058823,
+          462.6838235294117
+        ],
+        [
+          504.4117647058823,
+          471.87499999999994
+        ],
+        [
+          495.40441176470586,
+          471.87499999999994
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "difficult": false,
+      "shape_type": "rectangle",
+      "flags": {},
+      "attributes": {}
+    },
+    {
+      "kie_linking": [],
+      "label": "cell",
+      "score": null,
+      "points": [
+        [
+          489.15441176470586,
+          455.5147058823529
+        ],
+        [
+          499.4485294117647,
+          455.5147058823529
+        ],
+        [
+          499.4485294117647,
+          467.27941176470586
+        ],
+        [
+          489.15441176470586,
+          467.27941176470586
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "difficult": false,
+      "shape_type": "rectangle",
+      "flags": {},
+      "attributes": {}
+    },
+    {
+      "kie_linking": [],
+      "label": "cell",
+      "score": null,
+      "points": [
+        [
+          383.0882352941176,
+          534.5588235294117
+        ],
+        [
+          397.2426470588235,
+          534.5588235294117
+        ],
+        [
+          397.2426470588235,
+          548.1617647058823
+        ],
+        [
+          383.0882352941176,
+          548.1617647058823
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "difficult": false,
+      "shape_type": "rectangle",
+      "flags": {},
+      "attributes": {}
+    },
+    {
+      "kie_linking": [],
+      "label": "cell",
+      "score": null,
+      "points": [
+        [
+          352.0220588235294,
+          471.3235294117647
+        ],
+        [
+          362.8676470588235,
+          471.3235294117647
+        ],
+        [
+          362.8676470588235,
+          480.33088235294116
+        ],
+        [
+          352.0220588235294,
+          480.33088235294116
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "difficult": false,
+      "shape_type": "rectangle",
+      "flags": {},
+      "attributes": {}
+    },
+    {
+      "kie_linking": [],
+      "label": "cell",
+      "score": null,
+      "points": [
+        [
+          318.0147058823529,
+          539.3382352941176
+        ],
+        [
+          337.31617647058823,
+          539.3382352941176
+        ],
+        [
+          337.31617647058823,
+          554.2279411764705
+        ],
+        [
+          318.0147058823529,
+          554.2279411764705
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "difficult": false,
+      "shape_type": "rectangle",
+      "flags": {},
+      "attributes": {}
+    },
+    {
+      "kie_linking": [],
+      "label": "cell",
+      "score": null,
+      "points": [
+        [
+          114.0168539325843,
+          328.9044943820225
+        ],
+        [
+          139.2977528089888,
+          328.9044943820225
+        ],
+        [
+          139.2977528089888,
+          355.5898876404495
+        ],
+        [
+          114.0168539325843,
+          355.5898876404495
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "difficult": false,
+      "shape_type": "rectangle",
+      "flags": {},
+      "attributes": {}
+    },
+    {
+      "kie_linking": [],
+      "label": "cell",
+      "score": null,
+      "points": [
+        [
+          105.58988764044946,
+          419.0730337078652
+        ],
+        [
+          121.88202247191015,
+          419.0730337078652
+        ],
+        [
+          121.88202247191015,
+          433.9606741573034
+        ],
+        [
+          105.58988764044946,
+          433.9606741573034
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "difficult": false,
+      "shape_type": "rectangle",
+      "flags": {},
+      "attributes": {}
+    },
+    {
+      "label": "cell",
+      "score": null,
+      "points": [
+        [
+          283.39350180505414,
+          367.87003610108303
+        ],
+        [
+          308.66425992779784,
+          367.87003610108303
+        ],
+        [
+          308.66425992779784,
+          396.028880866426
+        ],
+        [
+          283.39350180505414,
+          396.028880866426
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "difficult": false,
+      "shape_type": "rectangle",
+      "flags": {},
+      "attributes": {},
+      "kie_linking": []
+    }
+  ],
+  "imagePath": "20251119_040538_Z22222DS3620.jpg",
+  "imageData": null,
+  "imageHeight": 630,
+  "imageWidth": 630,
+  "description": ""
+}
