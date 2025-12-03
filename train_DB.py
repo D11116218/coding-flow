@@ -18,69 +18,178 @@ TRAIN_LABELS_DIR = 'DB/labels/train'
 VAL_IMAGES_DIR = 'DB/images/val'
 VAL_LABELS_DIR = 'DB/labels/val'
 DATASET_YAML = 'DB_dataset.yaml'
-PREPROCESSED_FOLDER = 'DB預處理'  # 預處理後的圖片存放資料夾
+
+# 預處理資料夾路徑
+PREPROCESSED_FOLDER = 'DB預處理'
 PREPROCESSED_TRAIN_DIR = os.path.join(PREPROCESSED_FOLDER, 'images', 'train')
 PREPROCESSED_VAL_DIR = os.path.join(PREPROCESSED_FOLDER, 'images', 'val')
 PREPROCESSED_LABELS_TRAIN_DIR = os.path.join(PREPROCESSED_FOLDER, 'labels', 'train')
 PREPROCESSED_LABELS_VAL_DIR = os.path.join(PREPROCESSED_FOLDER, 'labels', 'val')
-PREPROCESSED_YAML = 'DB預處理_dataset.yaml'  # 預處理資料集的 yaml 檔案
+PREPROCESSED_YAML = 'DB預處理_dataset.yaml'
 
 # 訓練配置
 TRAIN_CONFIG = {
-    'base_model': 'yolov8n.pt',     # 基礎模型
-    'data_yaml': DATASET_YAML,      # 資料集設定檔
-    'epochs': 50,                   # 訓練輪數
-    'imgsz': 640,                   # 圖片大小
-    'batch': 16,                    # 批次大小
-    'name': 'DB_cell_detection1',   # 專案名稱（固定為 1，每次覆蓋）
-    'patience': 25,                 # 早停耐心值
+    'base_model': 'yolov8n.pt',
+    'data_yaml': DATASET_YAML,
+    'epochs': 50,
+    'imgsz': 640,
+    'batch': 16,
+    'name': 'DB_cell_detection1',
+    'patience': 25,
 }
 
 # 資料擴增配置
 AUGMENTATION_CONFIG = {
     # 顏色增強
-    'hsv_h': 0.015,                 # 色調變化範圍（±1.5%，輕微）
-    'hsv_s': 0.7,                   # 飽和度變化範圍（±70%，適中）
-    'hsv_v': 0.4,                   # 亮度變化範圍（±40%，適中）
+    'hsv_h': 0.015,
+    'hsv_s': 0.7,
+    'hsv_v': 0.4,
     
-    # 幾何變換（保守設定避免小物體變形）
-    'degrees': 5.0,                 # 旋轉角度範圍（±5度）
-    'translate': 0.1,               # 平移範圍（±10%）
-    'scale': 0.2,                   # 縮放範圍（0.8-1.2倍）
-    'shear': 2.0,                   # 剪切角度（±2度）
-    'perspective': 0.0005,          # 透視變換（0.0005，輕微）
+    # 幾何變換
+    'degrees': 5.0,
+    'translate': 0.1,
+    'scale': 0.2,
+    'shear': 2.0,
+    'perspective': 0.0005,
     
     # 翻轉
-    'flipud': 0.5,                  # 上下翻轉機率（50%機率）
-    'fliplr': 0.5,                  # 左右翻轉機率（50%機率）
+    'flipud': 0.5,
+    'fliplr': 0.5,
     
     # 進階增強
-    'mosaic': 0.5,                  # 馬賽克增強機率（50%機率）
-    'mixup': 0.15,                  # 混合增強機率（15%機率）
-    'copy_paste': 0.0,              # 複製貼上增強機率（0 = 關閉，避免標籤混亂）
+    'mosaic': 0.5,
+    'mixup': 0.15,
+    'copy_paste': 0.0,
 }
 
 # 預處理參數（GIMP 風格）
 PREPROCESS_PARAMS = {
-    # 銳利化參數（Unsharp Mask）
-    'sharpen_radius': 1.0,          # 銳化半徑
-    'sharpen_amount': 1.0,          # 銳化強度（0.0-5.0）
-    'sharpen_threshold': 0.0,       # 銳化閾值
+    # 銳利化參數
+    'sharpen_radius': 1.0,
+    'sharpen_amount': 1.0,
+    'sharpen_threshold': 0.0,
     
-    # 降低雜訊參數（非局部均值去噪）
-    'denoise_h': 10.0,              # 過濾強度（越大去噪越強，但可能模糊細節）
-    'denoise_templateWindowSize': 7, # 模板窗口大小（必須為奇數）
-    'denoise_searchWindowSize': 21  # 搜索窗口大小（必須為奇數）
+    # 降低雜訊參數
+    'denoise_h': 10.0,
+    'denoise_templateWindowSize': 7,
+    'denoise_searchWindowSize': 21
 }
+
+# 圖片副檔名
+IMAGE_EXTENSIONS = ['*.jpg', '*.jpeg', '*.png', '*.JPG', '*.JPEG', '*.PNG']
+
+# ============================================================================
+# 工具函數
+# ============================================================================
+
+def find_image_files(directory):
+    """
+    查找目錄中的所有圖片檔案
+    
+    參數：
+        directory: 目錄路徑
+    
+    返回：
+        圖片檔案路徑列表
+    """
+    if not os.path.exists(directory):
+        return []
+    
+    image_files = []
+    for ext in IMAGE_EXTENSIONS:
+        pattern = os.path.join(directory, ext)
+        image_files.extend(glob.glob(pattern))
+    
+    return image_files
+
+def find_label_files(directory):
+    """
+    查找目錄中的所有標籤檔案
+    
+    參數：
+        directory: 目錄路徑
+    
+    返回：
+        標籤檔案路徑列表
+    """
+    if not os.path.exists(directory):
+        return []
+    
+    return glob.glob(os.path.join(directory, '*.txt'))
 
 # ============================================================================
 # 預處理函數
 # ============================================================================
 
+def convert_to_grayscale_gimp(image):
+    """
+    使用 GIMP 亮度方法轉換為灰階
+    
+    參數：
+        image: BGR 格式圖片
+    
+    返回：
+        灰階圖片
+    """
+    b, g, r = cv2.split(image)
+    gray = (0.114 * b.astype(np.float32) + 
+            0.587 * g.astype(np.float32) + 
+            0.299 * r.astype(np.float32)).astype(np.uint8)
+    return gray
+
+def sharpen_image_unsharp_mask(image, radius, amount, threshold=0.0):
+    """
+    使用 Unsharp Mask 方法銳化圖片（GIMP 風格）
+    
+    參數：
+        image: 灰階圖片
+        radius: 銳化半徑
+        amount: 銳化強度
+        threshold: 銳化閾值
+    
+    返回：
+        銳化後的圖片
+    """
+    blurred = cv2.GaussianBlur(image, (0, 0), radius)
+    sharpened = cv2.addWeighted(
+        image,
+        1.0 + amount,
+        blurred,
+        -amount,
+        0
+    )
+    
+    if threshold > 0:
+        diff = cv2.absdiff(image, blurred)
+        mask = diff > threshold
+        sharpened = np.where(mask, sharpened, image).astype(np.uint8)
+    
+    return sharpened
+
+def denoise_image(image, h, template_window_size, search_window_size):
+    """
+    使用非局部均值去噪降低雜訊（GIMP 風格）
+    
+    參數：
+        image: 灰階圖片
+        h: 過濾強度
+        template_window_size: 模板窗口大小
+        search_window_size: 搜索窗口大小
+    
+    返回：
+        去噪後的圖片
+    """
+    return cv2.fastNlMeansDenoising(
+        image,
+        h=h,
+        templateWindowSize=template_window_size,
+        searchWindowSize=search_window_size
+    )
+
 def preprocess_image(image):
     """
     預處理圖片（GIMP 風格）
-    依序使用：顏色轉灰階（GIMP 亮度方法）、銳利化、降低雜訊
+    依序使用：顏色轉灰階、銳利化、降低雜訊
     
     參數：
         image: 輸入圖片（BGR 格式）
@@ -88,52 +197,78 @@ def preprocess_image(image):
     返回：
         處理後的圖片（灰階格式）
     """
-    # 1. 顏色轉灰階（使用 GIMP 的亮度方法）
-    # GIMP 使用亮度（Luminosity）公式：0.299*R + 0.587*G + 0.114*B
-    # OpenCV 的 BGR 格式，所以是：0.114*B + 0.587*G + 0.299*R
-    b, g, r = cv2.split(image)
-    gray = (0.114 * b.astype(np.float32) + 
-            0.587 * g.astype(np.float32) + 
-            0.299 * r.astype(np.float32)).astype(np.uint8)
+    # 1. 顏色轉灰階（GIMP 亮度方法）
+    gray = convert_to_grayscale_gimp(image)
     
-    # 2. 銳利化（使用 Unsharp Mask 方法，類似 GIMP）
-    # Unsharp Mask: 原圖 - 模糊圖，然後加到原圖上
-    blurred = cv2.GaussianBlur(
+    # 2. 銳利化（Unsharp Mask）
+    sharpened = sharpen_image_unsharp_mask(
         gray,
-        (0, 0),
-        PREPROCESS_PARAMS['sharpen_radius']
-    )
-    sharpened = cv2.addWeighted(
-        gray,
-        1.0 + PREPROCESS_PARAMS['sharpen_amount'],
-        blurred,
-        -PREPROCESS_PARAMS['sharpen_amount'],
-        0
+        PREPROCESS_PARAMS['sharpen_radius'],
+        PREPROCESS_PARAMS['sharpen_amount'],
+        PREPROCESS_PARAMS['sharpen_threshold']
     )
     
-    # 應用閾值（如果設定）
-    if PREPROCESS_PARAMS['sharpen_threshold'] > 0:
-        # 計算差異
-        diff = cv2.absdiff(gray, blurred)
-        # 只對差異大於閾值的區域進行銳化
-        mask = diff > PREPROCESS_PARAMS['sharpen_threshold']
-        sharpened = np.where(mask, sharpened, gray).astype(np.uint8)
-    
-    # 3. 降低雜訊（使用非局部均值去噪，類似 GIMP 的降噪功能）
-    denoised = cv2.fastNlMeansDenoising(
+    # 3. 降低雜訊（非局部均值去噪）
+    denoised = denoise_image(
         sharpened,
-        h=PREPROCESS_PARAMS['denoise_h'],
-        templateWindowSize=PREPROCESS_PARAMS['denoise_templateWindowSize'],
-        searchWindowSize=PREPROCESS_PARAMS['denoise_searchWindowSize']
+        PREPROCESS_PARAMS['denoise_h'],
+        PREPROCESS_PARAMS['denoise_templateWindowSize'],
+        PREPROCESS_PARAMS['denoise_searchWindowSize']
     )
     
     return denoised
 
-def copy_images_to_preprocessed_folder():
-    """複製訓練集圖片和標籤到 DB預處理 資料夾（會覆蓋現有檔案）"""
-    print("\n正在複製圖片和標籤到 DB預處理 資料夾...")
+def preprocess_images_in_directory(directory):
+    """
+    對目錄中的所有圖片進行預處理
     
-    # 清空並創建預處理資料夾結構
+    參數：
+        directory: 圖片目錄路徑
+    
+    返回：
+        處理的圖片數量
+    """
+    image_files = find_image_files(directory)
+    count = 0
+    
+    for img_path in image_files:
+        image = cv2.imread(img_path)
+        if image is not None:
+            preprocessed = preprocess_image(image)
+            cv2.imwrite(img_path, preprocessed)
+            count += 1
+    
+    return count
+
+# ============================================================================
+# 檔案操作函數
+# ============================================================================
+
+def copy_files(source_dir, dest_dir, file_list):
+    """
+    複製檔案列表到目標目錄
+    
+    參數：
+        source_dir: 來源目錄
+        dest_dir: 目標目錄
+        file_list: 檔案路徑列表
+    
+    返回：
+        複製的檔案數量
+    """
+    os.makedirs(dest_dir, exist_ok=True)
+    count = 0
+    
+    for file_path in file_list:
+        filename = os.path.basename(file_path)
+        dest_path = os.path.join(dest_dir, filename)
+        shutil.copy2(file_path, dest_path)
+        count += 1
+    
+    return count
+
+def setup_preprocessed_folder():
+    """設置預處理資料夾結構"""
     if os.path.exists(PREPROCESSED_FOLDER):
         shutil.rmtree(PREPROCESSED_FOLDER)
     
@@ -143,58 +278,34 @@ def copy_images_to_preprocessed_folder():
     if os.path.exists(VAL_IMAGES_DIR):
         os.makedirs(PREPROCESSED_VAL_DIR, exist_ok=True)
         os.makedirs(PREPROCESSED_LABELS_VAL_DIR, exist_ok=True)
+
+def copy_images_to_preprocessed_folder():
+    """複製訓練集圖片和標籤到 DB預處理 資料夾"""
+    print("\n正在複製圖片和標籤到 DB預處理 資料夾...")
+    
+    setup_preprocessed_folder()
     
     # 複製訓練圖片
-    train_images = glob.glob(os.path.join(TRAIN_IMAGES_DIR, '*.jpg')) + \
-                   glob.glob(os.path.join(TRAIN_IMAGES_DIR, '*.jpeg')) + \
-                   glob.glob(os.path.join(TRAIN_IMAGES_DIR, '*.png')) + \
-                   glob.glob(os.path.join(TRAIN_IMAGES_DIR, '*.JPG')) + \
-                   glob.glob(os.path.join(TRAIN_IMAGES_DIR, '*.JPEG')) + \
-                   glob.glob(os.path.join(TRAIN_IMAGES_DIR, '*.PNG'))
-    
-    train_count = 0
-    for img_path in train_images:
-        filename = os.path.basename(img_path)
-        dest_path = os.path.join(PREPROCESSED_TRAIN_DIR, filename)
-        shutil.copy2(img_path, dest_path)
-        train_count += 1
+    train_images = find_image_files(TRAIN_IMAGES_DIR)
+    train_count = copy_files(TRAIN_IMAGES_DIR, PREPROCESSED_TRAIN_DIR, train_images)
     
     # 複製訓練標籤
-    train_labels = glob.glob(os.path.join(TRAIN_LABELS_DIR, '*.txt'))
-    label_count = 0
-    for label_path in train_labels:
-        filename = os.path.basename(label_path)
-        dest_path = os.path.join(PREPROCESSED_LABELS_TRAIN_DIR, filename)
-        shutil.copy2(label_path, dest_path)
-        label_count += 1
+    train_labels = find_label_files(TRAIN_LABELS_DIR)
+    label_count = copy_files(TRAIN_LABELS_DIR, PREPROCESSED_LABELS_TRAIN_DIR, train_labels)
     
     print(f"  已複製 {train_count} 張訓練圖片和 {label_count} 個標籤到 {PREPROCESSED_TRAIN_DIR}")
     
     # 複製驗證圖片和標籤（如果存在）
     val_count = 0
     val_label_count = 0
+    
     if os.path.exists(VAL_IMAGES_DIR):
-        val_images = glob.glob(os.path.join(VAL_IMAGES_DIR, '*.jpg')) + \
-                     glob.glob(os.path.join(VAL_IMAGES_DIR, '*.jpeg')) + \
-                     glob.glob(os.path.join(VAL_IMAGES_DIR, '*.png')) + \
-                     glob.glob(os.path.join(VAL_IMAGES_DIR, '*.JPG')) + \
-                     glob.glob(os.path.join(VAL_IMAGES_DIR, '*.JPEG')) + \
-                     glob.glob(os.path.join(VAL_IMAGES_DIR, '*.PNG'))
+        val_images = find_image_files(VAL_IMAGES_DIR)
+        val_count = copy_files(VAL_IMAGES_DIR, PREPROCESSED_VAL_DIR, val_images)
         
-        for img_path in val_images:
-            filename = os.path.basename(img_path)
-            dest_path = os.path.join(PREPROCESSED_VAL_DIR, filename)
-            shutil.copy2(img_path, dest_path)
-            val_count += 1
-        
-        # 複製驗證標籤
         if os.path.exists(VAL_LABELS_DIR):
-            val_labels = glob.glob(os.path.join(VAL_LABELS_DIR, '*.txt'))
-            for label_path in val_labels:
-                filename = os.path.basename(label_path)
-                dest_path = os.path.join(PREPROCESSED_LABELS_VAL_DIR, filename)
-                shutil.copy2(label_path, dest_path)
-                val_label_count += 1
+            val_labels = find_label_files(VAL_LABELS_DIR)
+            val_label_count = copy_files(VAL_LABELS_DIR, PREPROCESSED_LABELS_VAL_DIR, val_labels)
         
         if val_count > 0:
             print(f"  已複製 {val_count} 張驗證圖片和 {val_label_count} 個標籤到 {PREPROCESSED_VAL_DIR}")
@@ -202,44 +313,17 @@ def copy_images_to_preprocessed_folder():
     return train_count + val_count
 
 def preprocess_images_in_folder():
-    """對 DB預處理 資料夾中的圖片進行預處理（覆蓋）"""
+    """對 DB預處理 資料夾中的圖片進行預處理"""
     print("\n正在預處理 DB預處理 資料夾中的圖片...")
     
     # 處理訓練圖片
-    train_images = glob.glob(os.path.join(PREPROCESSED_TRAIN_DIR, '*.jpg')) + \
-                   glob.glob(os.path.join(PREPROCESSED_TRAIN_DIR, '*.jpeg')) + \
-                   glob.glob(os.path.join(PREPROCESSED_TRAIN_DIR, '*.png')) + \
-                   glob.glob(os.path.join(PREPROCESSED_TRAIN_DIR, '*.JPG')) + \
-                   glob.glob(os.path.join(PREPROCESSED_TRAIN_DIR, '*.JPEG')) + \
-                   glob.glob(os.path.join(PREPROCESSED_TRAIN_DIR, '*.PNG'))
-    
-    train_count = 0
-    for img_path in train_images:
-        image = cv2.imread(img_path)
-        if image is not None:
-            preprocessed = preprocess_image(image)
-            cv2.imwrite(img_path, preprocessed)  # 覆蓋原檔案
-            train_count += 1
-    
+    train_count = preprocess_images_in_directory(PREPROCESSED_TRAIN_DIR)
     print(f"  已預處理 {train_count} 張訓練圖片")
     
     # 處理驗證圖片（如果存在）
     val_count = 0
     if os.path.exists(PREPROCESSED_VAL_DIR):
-        val_images = glob.glob(os.path.join(PREPROCESSED_VAL_DIR, '*.jpg')) + \
-                     glob.glob(os.path.join(PREPROCESSED_VAL_DIR, '*.jpeg')) + \
-                     glob.glob(os.path.join(PREPROCESSED_VAL_DIR, '*.png')) + \
-                     glob.glob(os.path.join(PREPROCESSED_VAL_DIR, '*.JPG')) + \
-                     glob.glob(os.path.join(PREPROCESSED_VAL_DIR, '*.JPEG')) + \
-                     glob.glob(os.path.join(PREPROCESSED_VAL_DIR, '*.PNG'))
-        
-        for img_path in val_images:
-            image = cv2.imread(img_path)
-            if image is not None:
-                preprocessed = preprocess_image(image)
-                cv2.imwrite(img_path, preprocessed)  # 覆蓋原檔案
-                val_count += 1
-        
+        val_count = preprocess_images_in_directory(PREPROCESSED_VAL_DIR)
         if val_count > 0:
             print(f"  已預處理 {val_count} 張驗證圖片")
     
@@ -249,29 +333,23 @@ def create_preprocessed_yaml():
     """創建預處理資料集的 yaml 檔案"""
     print("\n正在創建預處理資料集設定檔...")
     
-    # 讀取原始 yaml 檔案以獲取類別資訊
-    with open(DATASET_YAML, 'r', encoding='utf-8') as f:
-        original_content = f.read()
-    
-    # 創建預處理資料集的 yaml 內容
     yaml_content = f"""# DB預處理 訓練集設定檔
 
 # 資料集路徑（相對於此檔案）
-path: ./{PREPROCESSED_FOLDER}  # DB預處理 資料集根目錄
-train: images/train  # 訓練圖片路徑（相對於 path）
-val: images/val      # 驗證圖片路徑（相對於 path）
+path: ./{PREPROCESSED_FOLDER}
+train: images/train
+val: images/val
 
-# 類別名稱（三個類別）
+# 類別名稱
 names:
-  0: RFID   # 類別 0：RFID 標籤
-  1: cell   # 類別 1：菌落
-  2: point  # 類別 2：疙瘩
+  0: RFID
+  1: cell
+  2: point
 
 # 類別數量
-nc: 3  # 三個類別
+nc: 3
 """
     
-    # 寫入 yaml 檔案
     with open(PREPROCESSED_YAML, 'w', encoding='utf-8') as f:
         f.write(yaml_content)
     
@@ -288,9 +366,8 @@ def check_dataset():
         print("請確認 DB 資料夾已建立。")
         return False
     
-    # 檢查訓練資料
-    train_images_exist = os.path.exists(TRAIN_IMAGES_DIR) and len(os.listdir(TRAIN_IMAGES_DIR)) > 0
-    train_labels_exist = os.path.exists(TRAIN_LABELS_DIR) and len([f for f in os.listdir(TRAIN_LABELS_DIR) if f.endswith('.txt')]) > 0
+    train_images_exist = os.path.exists(TRAIN_IMAGES_DIR) and len(find_image_files(TRAIN_IMAGES_DIR)) > 0
+    train_labels_exist = os.path.exists(TRAIN_LABELS_DIR) and len(find_label_files(TRAIN_LABELS_DIR)) > 0
     
     if not train_images_exist:
         print("錯誤：DB/images/train/ 資料夾為空或不存在！")
@@ -306,20 +383,14 @@ def check_dataset():
 
 def get_statistics():
     """獲取資料集統計資訊"""
-    image_count = len([f for f in os.listdir(TRAIN_IMAGES_DIR) 
-                      if f.lower().endswith(('.jpg', '.jpeg', '.png'))])
-    label_count = len([f for f in os.listdir(TRAIN_LABELS_DIR) 
-                      if f.endswith('.txt')])
-    
-    val_count = 0
-    if os.path.exists(VAL_IMAGES_DIR):
-        val_count = len([f for f in os.listdir(VAL_IMAGES_DIR) 
-                        if f.lower().endswith(('.jpg', '.jpeg', '.png'))])
+    train_images = find_image_files(TRAIN_IMAGES_DIR)
+    train_labels = find_label_files(TRAIN_LABELS_DIR)
+    val_images = find_image_files(VAL_IMAGES_DIR)
     
     return {
-        'train_images': image_count,
-        'train_labels': label_count,
-        'val_images': val_count
+        'train_images': len(train_images),
+        'train_labels': len(train_labels),
+        'val_images': len(val_images)
     }
 
 def print_statistics(stats):
@@ -358,6 +429,7 @@ def print_train_config():
     print("  - 步驟 1：顏色轉灰階（GIMP 亮度方法：0.299*R + 0.587*G + 0.114*B）")
     print(f"  - 步驟 2：銳利化（Unsharp Mask，半徑={PREPROCESS_PARAMS['sharpen_radius']}, 強度={PREPROCESS_PARAMS['sharpen_amount']}）")
     print(f"  - 步驟 3：降低雜訊（非局部均值去噪，強度={PREPROCESS_PARAMS['denoise_h']}）")
+    
     print("\n資料擴增設定：")
     print("  - 顏色增強：色調±1.5%、飽和度±70%、亮度±40%")
     print("  - 翻轉：上下翻轉（50%機率）、左右翻轉（50%機率）")
@@ -382,23 +454,16 @@ def train_model(model):
             plots=True,
             
             # 資料擴增參數
-            # 顏色增強
             hsv_h=AUGMENTATION_CONFIG['hsv_h'],
             hsv_s=AUGMENTATION_CONFIG['hsv_s'],
             hsv_v=AUGMENTATION_CONFIG['hsv_v'],
-            
-            # 幾何變換
             degrees=AUGMENTATION_CONFIG['degrees'],
             translate=AUGMENTATION_CONFIG['translate'],
             scale=AUGMENTATION_CONFIG['scale'],
             shear=AUGMENTATION_CONFIG['shear'],
             perspective=AUGMENTATION_CONFIG['perspective'],
-            
-            # 翻轉
             flipud=AUGMENTATION_CONFIG['flipud'],
             fliplr=AUGMENTATION_CONFIG['fliplr'],
-            
-            # 進階增強
             mosaic=AUGMENTATION_CONFIG['mosaic'],
             mixup=AUGMENTATION_CONFIG['mixup'],
             copy_paste=AUGMENTATION_CONFIG['copy_paste'],
@@ -408,8 +473,7 @@ def train_model(model):
         print("訓練完成！")
         print("=" * 60)
         print(f"最後一個檢查點: {results.save_dir}/weights/last.pt")
-        print("\n使用方式：")
-        print(f"  模型路徑: {results.save_dir}/weights/best.pt")
+        print(f"最佳模型: {results.save_dir}/weights/best.pt")
         
         return results
         
@@ -443,23 +507,21 @@ def main():
     # 4. 顯示訓練設定
     print_train_config()
     
-    # 5. 複製訓練集圖片和標籤到 DB預處理 資料夾（會覆蓋現有檔案）
+    # 5. 複製圖片和標籤到預處理資料夾
     copy_images_to_preprocessed_folder()
     
-    # 6. 對 DB預處理 資料夾中的圖片進行預處理（覆蓋）
+    # 6. 預處理圖片
     preprocess_images_in_folder()
     
-    # 7. 創建預處理資料集的 yaml 檔案
+    # 7. 創建預處理資料集設定檔
     create_preprocessed_yaml()
     
-    # 8. 訓練模型（使用預處理後的圖片）
-    # 臨時修改訓練配置使用預處理資料集
+    # 8. 訓練模型
     original_data_yaml = TRAIN_CONFIG['data_yaml']
     TRAIN_CONFIG['data_yaml'] = PREPROCESSED_YAML
     
     results = train_model(model)
     
-    # 恢復原始配置
     TRAIN_CONFIG['data_yaml'] = original_data_yaml
     
     if results is None:
