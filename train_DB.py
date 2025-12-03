@@ -62,17 +62,25 @@ AUGMENTATION_CONFIG = {
     'copy_paste': 0.0,
 }
 
-# 預處理參數（GIMP 風格）
+# 預處理參數（GIMP 風格，根據實際 GIMP 設定調整）
 PREPROCESS_PARAMS = {
-    # 銳利化參數
-    'sharpen_radius': 1.0,
-    'sharpen_amount': 1.0,
-    'sharpen_threshold': 0.0,
+    # 顏色轉灰階參數（GIMP 的顏色轉灰階設定）
+    # 注意：GIMP 的顏色轉灰階有 Radius/Samples/Iterations 參數，這是特殊算法
+    # 我們使用 GIMP 亮度方法作為基礎
+    'grayscale_radius': 300,        # GIMP Radius = 300
+    'grayscale_samples': 4,         # GIMP Samples = 4
+    'grayscale_iterations': 10,     # GIMP Iterations = 10
+    'grayscale_enhance_shadows': False,  # GIMP Enhance Shadows = 未勾選
     
-    # 降低雜訊參數
-    'denoise_h': 10.0,
-    'denoise_templateWindowSize': 7,
-    'denoise_searchWindowSize': 21
+    # 銳利化參數（對應 GIMP 的銳利化設定）
+    'sharpen_radius': 3.0,          # 銳化半徑（GIMP Radius = 3.000）
+    'sharpen_amount': 5.527,        # 銳化強度（GIMP Amount = 5.527）
+    'sharpen_threshold': 0.0,       # 銳化閾值（GIMP Threshold = 0.000）
+    
+    # 降低雜訊參數（對應 GIMP 的降低雜訊設定）
+    'denoise_h': 11.0,              # 過濾強度（GIMP Strength = 11）
+    'denoise_templateWindowSize': 7, # 模板窗口大小（必須為奇數，建議 5-9）
+    'denoise_searchWindowSize': 21  # 搜索窗口大小（必須為奇數，建議 15-25）
 }
 
 # 圖片副檔名
@@ -124,6 +132,8 @@ def find_label_files(directory):
 def convert_to_grayscale_gimp(image):
     """
     使用 GIMP 亮度方法轉換為灰階
+    注意：GIMP 的「顏色轉灰階」有 Radius/Samples/Iterations 參數，這是特殊算法
+    我們使用標準亮度方法，並可選添加高斯模糊模擬 Radius 效果
     
     參數：
         image: BGR 格式圖片
@@ -131,57 +141,78 @@ def convert_to_grayscale_gimp(image):
     返回：
         灰階圖片
     """
+    # 1. 使用 GIMP 亮度公式轉換為灰階
     b, g, r = cv2.split(image)
     gray = (0.114 * b.astype(np.float32) + 
             0.587 * g.astype(np.float32) + 
             0.299 * r.astype(np.float32)).astype(np.uint8)
+    
+    # 2. GIMP 的顏色轉灰階有 Radius 參數（300），這可能影響邊緣處理
+    # 如果 radius 很大，可能需要特殊處理，但標準亮度方法已經足夠
+    # 注意：GIMP 的 Radius/Samples/Iterations 是特殊算法，難以完全複製
+    # 我們使用標準亮度方法作為基礎
+    
     return gray
 
 def sharpen_image_unsharp_mask(image, radius, amount, threshold=0.0):
     """
     使用 Unsharp Mask 方法銳化圖片（GIMP 風格）
+    使用與 GIMP 相同的公式：sharpened = original + (original - blurred) * amount
     
     參數：
         image: 灰階圖片
-        radius: 銳化半徑
-        amount: 銳化強度
-        threshold: 銳化閾值
+        radius: 銳化半徑（GIMP 的 Radius）
+        amount: 銳化強度（GIMP 的 Amount）
+        threshold: 銳化閾值（GIMP 的 Threshold）
     
     返回：
         銳化後的圖片
     """
-    blurred = cv2.GaussianBlur(image, (0, 0), radius)
-    sharpened = cv2.addWeighted(
-        image,
-        1.0 + amount,
-        blurred,
-        -amount,
-        0
-    )
+    # 轉換為 float32 以進行精確計算
+    img_float = image.astype(np.float32)
     
+    # 計算高斯模糊（GIMP 使用 sigma = radius）
+    # 計算 kernel 大小：通常使用 6*sigma+1，確保為奇數
+    kernel_size = int(6 * radius + 1)
+    if kernel_size % 2 == 0:
+        kernel_size += 1
+    blurred = cv2.GaussianBlur(img_float, (kernel_size, kernel_size), radius)
+    
+    # GIMP 的 Unsharp Mask 公式：sharpened = original + (original - blurred) * amount
+    diff = img_float - blurred
+    sharpened = img_float + diff * amount
+    
+    # 應用閾值（如果設定）
     if threshold > 0:
-        diff = cv2.absdiff(image, blurred)
-        mask = diff > threshold
-        sharpened = np.where(mask, sharpened, image).astype(np.uint8)
+        # 計算差異的絕對值
+        diff_abs = np.abs(diff)
+        # 只對差異大於閾值的區域進行銳化
+        mask = diff_abs > threshold
+        sharpened = np.where(mask, sharpened, img_float)
+    
+    # 限制數值範圍到 [0, 255] 並轉回 uint8
+    sharpened = np.clip(sharpened, 0, 255).astype(np.uint8)
     
     return sharpened
 
-def denoise_image(image, h, template_window_size, search_window_size):
+def denoise_image(image, strength, template_window_size, search_window_size):
     """
     使用非局部均值去噪降低雜訊（GIMP 風格）
     
     參數：
         image: 灰階圖片
-        h: 過濾強度
+        strength: 過濾強度（GIMP 的 Strength，對應 OpenCV 的 h 參數）
         template_window_size: 模板窗口大小
         search_window_size: 搜索窗口大小
     
     返回：
         去噪後的圖片
     """
+    # GIMP 的 Strength 參數範圍通常是 0-10，對應 OpenCV 的 h 參數
+    # 直接使用 strength 作為 h 值
     return cv2.fastNlMeansDenoising(
         image,
-        h=h,
+        h=float(strength),
         templateWindowSize=template_window_size,
         searchWindowSize=search_window_size
     )
@@ -211,7 +242,7 @@ def preprocess_image(image):
     # 3. 降低雜訊（非局部均值去噪）
     denoised = denoise_image(
         sharpened,
-        PREPROCESS_PARAMS['denoise_h'],
+        PREPROCESS_PARAMS['denoise_h'],  # GIMP 的 Strength 參數
         PREPROCESS_PARAMS['denoise_templateWindowSize'],
         PREPROCESS_PARAMS['denoise_searchWindowSize']
     )
@@ -394,7 +425,7 @@ def get_statistics():
     }
 
 def print_statistics(stats):
-    """列印資料集統計資訊"""
+    """複製資料集統計資訊"""
     print(f"\n訓練資料統計：")
     print(f"  訓練圖片：{stats['train_images']} 張")
     print(f"  標註檔：{stats['train_labels']} 個")
@@ -425,10 +456,11 @@ def load_model():
 
 def print_train_config():
     """列印訓練設定"""
-    print("\n預處理設定（GIMP 風格）：")
+    print("\n預處理設定（GIMP 風格，根據實際 GIMP 設定）：")
     print("  - 步驟 1：顏色轉灰階（GIMP 亮度方法：0.299*R + 0.587*G + 0.114*B）")
-    print(f"  - 步驟 2：銳利化（Unsharp Mask，半徑={PREPROCESS_PARAMS['sharpen_radius']}, 強度={PREPROCESS_PARAMS['sharpen_amount']}）")
-    print(f"  - 步驟 3：降低雜訊（非局部均值去噪，強度={PREPROCESS_PARAMS['denoise_h']}）")
+    print(f"    GIMP 設定：Radius={PREPROCESS_PARAMS['grayscale_radius']}, Samples={PREPROCESS_PARAMS['grayscale_samples']}, Iterations={PREPROCESS_PARAMS['grayscale_iterations']}")
+    print(f"  - 步驟 2：銳利化（Unsharp Mask，Radius={PREPROCESS_PARAMS['sharpen_radius']}, Amount={PREPROCESS_PARAMS['sharpen_amount']}, Threshold={PREPROCESS_PARAMS['sharpen_threshold']}）")
+    print(f"  - 步驟 3：降低雜訊（非局部均值去噪，Strength={PREPROCESS_PARAMS['denoise_h']}）")
     
     print("\n資料擴增設定：")
     print("  - 顏色增強：色調±1.5%、飽和度±70%、亮度±40%")
