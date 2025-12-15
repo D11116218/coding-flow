@@ -31,15 +31,15 @@ FILTER_CONFIG = {
     # 注意：YOLO 模型層使用最低值，然後在程式層進行類別特定的過濾
     'first_confidence_by_class': {
         # 提高類別特定的信心度門檻，降低低分框殘留
-        'RFID': 0.85,   # 原 0.049 → 0.55（保持高信心）
-        'cell': 0.84,   # 原 0.135 → 0.18
+        'RFID': 0.7,   # 原 0.049 → 0.55（保持高信心）
+        'cell': 0.45,   # 原 0.135 → 0.18
         'point': 0.67       # 原 0.0047 → 0.10
     },
     # YOLO 模型層使用最低的信心度值（確保所有類別都能通過）
     'yolo_conf_threshold': 0.05,  # 原 0.001 → 0.05，先在模型層砍掉極低分框
     # NMS（非極大值抑制）參數：過濾重疊的檢測框
     'yolo_iou_threshold': 0.45,   # YOLO 內建 NMS IoU 閾值（只在同類別內過濾）
-    'cross_class_iou_threshold': 0.5,  # 跨類別 NMS IoU 閾值（0.1 太低會過度過濾，正常範圍 0.5-0.6）
+    'cross_class_iou_threshold': 0.3,  # 跨類別 NMS IoU 閾值（0.1 太低會過度過濾，正常範圍 0.5-0.6）
     
     # 面積過濾
     'min_area_by_class': {

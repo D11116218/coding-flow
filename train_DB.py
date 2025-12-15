@@ -95,6 +95,9 @@ IMAGE_EXTENSIONS = ['*.jpg', '*.jpeg', '*.png', '*.JPG', '*.JPEG', '*.PNG']
 
 def print_train_config():
     """顯示訓練與資料增強設定"""
+    print("\n訓練設定:")
+    for k, v in TRAIN_CONFIG.items():
+        print(f"  {k}: {v}")
 
     print("\n預處理輸出路徑:")
     print(f"  資料夾: {PREPROCESSED_FOLDER}")
