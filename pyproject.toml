@@ -5,7 +5,7 @@ description = "YOLO v8 細胞偵測模型訓練專案"
 authors = ["Your Name <you@example.com>"]
 
 [tool.poetry.dependencies]
-python = ">=3.12,<3.13"
+python = ">=3.10,<3.11"
 ultralytics = "*"
 opencv-python = "*"
 numpy = "*"

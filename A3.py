@@ -1,4 +1,4 @@
-# YOLO v8 細胞偵測程式 - 圖片標記
+﻿# YOLO v8 細胞偵測程式 - 圖片標記
 
 import cv2
 import numpy as np
@@ -19,40 +19,36 @@ PREPROCESSED_FOLDER = '預處理'   # 預處理後的圖片資料夾
 IMAGE_EXTENSIONS = ['*.jpg', '*.jpeg', '*.png', '*.JPG', '*.JPEG', '*.PNG']
 
 # 模型路徑
-MODEL_PATH = 'runs/detect/DB_cell_detection15/weights/best.pt'
+MODEL_PATH = r"C:\Users\willes.chen\BB\runs\detect\DB_cell_detection1\weights\best.pt"
 
 # 預處理設定
 USE_PREPROCESSING = True  # True = 使用預處理，False = 使用原始圖片
+PREPROCESSED_FOLDER_A3 = '預處裡A3'  # A3 預處理輸出路徑
 
 # 過濾設定
 FILTER_CONFIG = {
-    # 第一次信心度過濾（程式層，類別特定）
-    # 注意：YOLO 模型層使用最低值，然後在程式層進行類別特定的第一次過濾
+    # 信心度過濾（程式層，類別特定）
+    # 注意：YOLO 模型層使用最低值，然後在程式層進行類別特定的過濾
     'first_confidence_by_class': {
-        'RFID': 0.01,   # RFID 第一次信心度過濾
-        'cell': 0.0058,   # cell 第一次信心度過濾
-        'point': 0.018  # point 第一次信心度過濾
+        # 提高類別特定的信心度門檻，降低低分框殘留
+        'RFID': 0.85,   # 原 0.049 → 0.55（保持高信心）
+        'cell': 0.84,   # 原 0.135 → 0.18
+        'point': 0.67       # 原 0.0047 → 0.10
     },
     # YOLO 模型層使用最低的信心度值（確保所有類別都能通過）
-    'yolo_conf_threshold': 0.001,  # 使用所有類別中的最低值
+    'yolo_conf_threshold': 0.05,  # 原 0.001 → 0.05，先在模型層砍掉極低分框
     # NMS（非極大值抑制）參數：過濾重疊的檢測框
-    'yolo_iou_threshold': 0.05,  # YOLO 內建 NMS IoU 閾值（只在同類別內過濾）
-    'cross_class_iou_threshold': 0.3,  # 跨類別 NMS IoU 閾值（處理不同類別之間的重疊，如 cell 和 point）
+    'yolo_iou_threshold': 0.45,   # YOLO 內建 NMS IoU 閾值（只在同類別內過濾）
+    'cross_class_iou_threshold': 0.5,  # 跨類別 NMS IoU 閾值（0.1 太低會過度過濾，正常範圍 0.5-0.6）
     
     # 面積過濾
     'min_area_by_class': {
-        'RFID': 1,     # RFID 最小面積
-        'cell': 0.01,     # cell 最小面積
-        'point': 0.01     # point 最小面積
+        'RFID': 0.001,   # RFID 最小面積比例
+        'cell': 0.001,   # cell 最小面積比例
+        'point': 0.001   # point 最小面積比例（）
     },
     'max_area_ratio': 0.99,  # 最大面積比例（相對於圖片大小）
-    
-    # 第二次信心度過濾（程式層，類別特定）
-    'min_confidence_by_class': {
-        'RFID': 0.1,  # RFID 最小信心度（第二次過濾）
-        'cell': 0.01,  # cell 最小信心度（第二次過濾）
-        'point': 0.01  # point 最小信心度（第二次過濾）
-    }
+
 }
 
 # 類別顏色設定 (BGR 格式)
@@ -69,75 +65,144 @@ CLASS_MAPPING = {
     2: 'point'
 }
 
-# 預處理參數
+# 預處理參數（GIMP 風格，根據實際 GIMP 設定調整）
 PREPROCESS_PARAMS = {
-    'bilateral_d': 9,
-    'bilateral_sigmaColor': 75,
-    'bilateral_sigmaSpace': 75,
-    'clahe_clipLimit': 2.0,
-    'clahe_tileGridSize': (8, 8),
-    'sharpen_weight': 0.6,
-    'enhanced_weight': 0.4
+    # 顏色轉灰階參數（GIMP 的顏色轉灰階設定）
+    # 注意：GIMP 的顏色轉灰階有 Radius/Samples/Iterations 參數，這是特殊算法
+    # 我們使用 GIMP 亮度方法作為基礎
+    'grayscale_radius': 300,        # GIMP Radius = 300
+    'grayscale_samples': 4,         # GIMP Samples = 4
+    'grayscale_iterations': 10,     # GIMP Iterations = 10
+    'grayscale_enhance_shadows': False,  # GIMP Enhance Shadows = 未勾選
+    
+    # 銳利化參數（對應 GIMP 的銳利化設定）
+    'sharpen_radius': 3.0,          # 銳化半徑（GIMP Radius = 3.000）
+    'sharpen_amount': 5.527,        # 銳化強度（GIMP Amount = 5.527）
+    'sharpen_threshold': 0.0,       # 銳化閾值（GIMP Threshold = 0.000）
+    
+    # 降低雜訊參數（對應 GIMP 的降低雜訊設定）
+    'denoise_h': 11.0,              # 過濾強度（GIMP Strength = 11）
+    'denoise_templateWindowSize': 7, # 模板窗口大小（必須為奇數，建議 5-9）
+    'denoise_searchWindowSize': 21,  # 搜索窗口大小（必須為奇數，建議 15-25）
 }
 
 # ============================================================================
 # 預處理函數
 # ============================================================================
 
+def convert_to_grayscale_gimp(image):
+    """
+    使用 GIMP 亮度方法轉換為灰階
+    注意：GIMP 的「顏色轉灰階」有 Radius/Samples/Iterations 參數，這是特殊算法
+    我們使用標準亮度方法，並可選添加高斯模糊模擬 Radius 效果
+    
+    參數：
+        image: BGR 格式圖片
+    
+    返回：
+        灰階圖片
+    """
+    # 1. 使用 GIMP 亮度公式轉換為灰階
+    b, g, r = cv2.split(image)
+    gray = (0.114 * b.astype(np.float32) + 
+            0.587 * g.astype(np.float32) + 
+            0.299 * r.astype(np.float32)).astype(np.uint8)
+    return gray
+
+def sharpen_image_unsharp_mask(image, radius, amount, threshold=0.0):
+    """
+    使用 Unsharp Mask 方法銳化圖片（GIMP 風格）
+    使用與 GIMP 相同的公式：sharpened = original + (original - blurred) * amount
+    
+    參數：
+        image: 灰階圖片
+        radius: 銳化半徑（GIMP 的 Radius）
+        amount: 銳化強度（GIMP 的 Amount）
+        threshold: 銳化閾值（GIMP 的 Threshold）
+    
+    返回：
+        銳化後的圖片
+    """
+    # 轉換為 float32 以進行精確計算
+    img_float = image.astype(np.float32)
+    
+    # 計算高斯模糊（GIMP 使用 sigma = radius）
+    # 計算 kernel 大小：通常使用 6*sigma+1，確保為奇數
+    kernel_size = int(6 * radius + 1)
+    if kernel_size % 2 == 0:
+        kernel_size += 1
+    blurred = cv2.GaussianBlur(img_float, (kernel_size, kernel_size), radius)
+    
+    # GIMP 的 Unsharp Mask 公式：sharpened = original + (original - blurred) * amount
+    diff = img_float - blurred
+    sharpened = img_float + diff * amount
+    
+    # 應用閾值（如果設定）
+    if threshold > 0:
+        # 計算差異的絕對值
+        diff_abs = np.abs(diff)
+        # 只對差異大於閾值的區域進行銳化
+        mask = diff_abs > threshold
+        sharpened = np.where(mask, sharpened, img_float)
+    
+    # 限制數值範圍到 [0, 255] 並轉回 uint8
+    sharpened = np.clip(sharpened, 0, 255).astype(np.uint8)
+    
+    return sharpened
+
+def denoise_image(image, strength, template_window_size, search_window_size):
+    """
+    使用非局部均值去噪降低雜訊（GIMP 風格）
+    
+    參數：
+        image: 灰階圖片
+        strength: 過濾強度（GIMP 的 Strength，對應 OpenCV 的 h 參數）
+        template_window_size: 模板窗口大小
+        search_window_size: 搜索窗口大小
+    
+    返回：
+        去噪後的圖片
+    """
+    # GIMP 的 Strength 參數範圍通常是 0-10，對應 OpenCV 的 h 參數
+    # 直接使用 strength 作為 h 值
+    return cv2.fastNlMeansDenoising(
+        image,
+        h=float(strength),
+        templateWindowSize=template_window_size,
+        searchWindowSize=search_window_size
+    )
+
 def preprocess_image(image):
     """
-    預處理圖片以增強菌落、標籤等對比度
-    使用 去噪 + CLAHE (對比度限制自適應直方圖均衡化) + 銳化 + 混合
+    預處理圖片（與 train_DB 相同）
+    依序使用：顏色轉灰階、銳利化、降低雜訊
     
     參數：
         image: 輸入圖片（BGR 格式）
     
     返回：
-        處理後的圖片（BGR 格式）
+        處理後的灰階圖片
     """
-    result = image.copy()
+    # 1. 顏色轉灰階（GIMP 亮度方法）
+    gray = convert_to_grayscale_gimp(image)
     
-    # 1. 去噪處理（雙邊濾波：去噪但保留邊緣）
-    denoised = cv2.bilateralFilter(
-        result,
-        d=PREPROCESS_PARAMS['bilateral_d'],
-        sigmaColor=PREPROCESS_PARAMS['bilateral_sigmaColor'],
-        sigmaSpace=PREPROCESS_PARAMS['bilateral_sigmaSpace']
+    # 2. 銳利化（Unsharp Mask）
+    sharpened = sharpen_image_unsharp_mask(
+        gray,
+        PREPROCESS_PARAMS['sharpen_radius'],
+        PREPROCESS_PARAMS['sharpen_amount'],
+        PREPROCESS_PARAMS['sharpen_threshold']
     )
     
-    # 2. 轉換到 LAB 色彩空間（分離亮度和顏色）
-    lab = cv2.cvtColor(denoised, cv2.COLOR_BGR2LAB)
-    l, a, b = cv2.split(lab)
-    
-    # 3. 對 L 通道（亮度）應用 CLAHE
-    clahe = cv2.createCLAHE(
-        clipLimit=PREPROCESS_PARAMS['clahe_clipLimit'],
-        tileGridSize=PREPROCESS_PARAMS['clahe_tileGridSize']
-    )
-    l_clahe = clahe.apply(l)
-    
-    # 4. 合併回 LAB 並轉回 BGR
-    lab_clahe = cv2.merge([l_clahe, a, b])
-    enhanced = cv2.cvtColor(lab_clahe, cv2.COLOR_LAB2BGR)
-    
-    # 5. 輕微銳化（強化邊緣，但不要太強）
-    kernel_sharpen = np.array([
-        [-1, -1, -1],
-        [-1,  9, -1],
-        [-1, -1, -1]
-    ])
-    sharpened = cv2.filter2D(enhanced, -1, kernel_sharpen)
-    
-    # 6. 混合原圖和銳化圖（避免過度銳化）
-    result = cv2.addWeighted(
+    # 3. 降低雜訊（非局部均值去噪）
+    denoised = denoise_image(
         sharpened,
-        PREPROCESS_PARAMS['sharpen_weight'],
-        enhanced,
-        PREPROCESS_PARAMS['enhanced_weight'],
-        0
+        PREPROCESS_PARAMS['denoise_h'],  # GIMP 的 Strength 參數
+        PREPROCESS_PARAMS['denoise_templateWindowSize'],
+        PREPROCESS_PARAMS['denoise_searchWindowSize']
     )
     
-    return result
+    return denoised
 
 # ============================================================================
 # 資料處理函數
@@ -159,7 +224,7 @@ def ensure_folders():
     """確保必要的資料夾存在"""
     os.makedirs(START_FOLDER, exist_ok=True)
     os.makedirs(FINISH_FOLDER, exist_ok=True)
-    os.makedirs(PREPROCESSED_FOLDER, exist_ok=True)
+    os.makedirs(PREPROCESSED_FOLDER_A3, exist_ok=True)
 
 # ============================================================================
 # 偵測和過濾函數
@@ -180,13 +245,24 @@ def detect_objects(model, detection_image, conf_threshold, iou_threshold):
 def print_detection_info(detections, num_boxes):
     """列印偵測結果的診斷資訊"""
     if num_boxes > 0:
-        
-        # 統計各 class_id 的數量
+        # 統計各 class_id 的數量與信心度
         class_id_counts = {}
+        class_id_confidences = {}
         for box in detections.boxes:
             cls_id = int(box.cls[0].cpu().numpy()) if box.cls is not None else 0
+            confidence = float(box.conf[0].cpu().numpy())
             class_id_counts[cls_id] = class_id_counts.get(cls_id, 0) + 1
+            class_id_confidences.setdefault(cls_id, []).append(confidence)
         
+        # 顯示各類別統計
+        for cls_id, count in class_id_counts.items():
+            class_name = CLASS_MAPPING.get(cls_id, f"class_{cls_id}")
+            confs = class_id_confidences.get(cls_id, [])
+            if confs:
+                avg_conf = sum(confs) / len(confs)
+                min_conf = min(confs)
+                max_conf = max(confs)
+                print(f"  {class_name} (class_id={cls_id}): {count} 個, 信心度範圍: {min_conf:.4f} ~ {max_conf:.4f}, 平均: {avg_conf:.4f}")
     else:
         print(f"  ⚠️  警告：YOLO 沒有偵測到任何物體！")
 
@@ -266,9 +342,12 @@ def calculate_iou(box1, box2):
     return inter_area / union_area
 
 def apply_cross_class_nms(detected_objects, iou_threshold):
-    """應用跨類別 NMS，過濾不同類別之間重疊的檢測框"""
+    """跨類別 NMS，並對類別給優先權：RFID > cell > point"""
     if len(detected_objects) <= 1:
         return detected_objects
+    
+    # 類別優先權（RFID > cell > point）
+    class_priority = {'RFID': 2, 'cell': 1, 'point': 0}
     
     # 按信心度降序排序
     sorted_objects = sorted(detected_objects, key=lambda x: x['confidence'], reverse=True)
@@ -277,21 +356,33 @@ def apply_cross_class_nms(detected_objects, iou_threshold):
     while sorted_objects:
         # 取出信心度最高的框
         current = sorted_objects.pop(0)
-        keep.append(current)
+        # 與已保留的框做比較，如重疊則依類別優先權/信心度決定保留誰
+        new_keep = []
+        keep_current = True
+        for kept in keep:
+            iou = calculate_iou(current, kept)
+            if iou > iou_threshold:
+                p_cur = class_priority.get(current['class'], 0)
+                p_keep = class_priority.get(kept['class'], 0)
+                
+                # 若 current 類別優先或同優先但信心度較高，則替換原框
+                if (p_cur > p_keep) or (p_cur == p_keep and current['confidence'] > kept['confidence']):
+                    continue  # 丟掉 kept，改保留 current
+                else:
+                    keep_current = False  # 保留 kept，丟掉 current
+                    new_keep.append(kept)
+            else:
+                new_keep.append(kept)
         
-        # 過濾與當前框重疊的其他框（不論類別）
-        remaining = []
-        for obj in sorted_objects:
-            iou = calculate_iou(current, obj)
-            if iou <= iou_threshold:
-                remaining.append(obj)
+        if keep_current:
+            new_keep.append(current)
         
-        sorted_objects = remaining
+        keep = new_keep
     
     return keep
 
 def filter_detections(detections, imgwidth, imgheight):
-    """過濾偵測結果（包含第一次和第二次信心度過濾）"""
+    """過濾偵測結果（使用信心度過濾）"""
     detected_objects = []
     class_counts = {'RFID': 0, 'cell': 0, 'point': 0}
     max_area = imgwidth * imgheight * FILTER_CONFIG['max_area_ratio']
@@ -305,14 +396,11 @@ def filter_detections(detections, imgwidth, imgheight):
         
         # 獲取過濾條件
         min_area = FILTER_CONFIG['min_area_by_class'].get(class_name, 20)
-        first_confidence = FILTER_CONFIG['first_confidence_by_class'].get(class_name, 0.01)  # 第一次過濾
-        min_confidence = FILTER_CONFIG['min_confidence_by_class'].get(class_name, 0.1)  # 第二次過濾
+        confidence = FILTER_CONFIG['first_confidence_by_class'].get(class_name, 0.01)  # 信心度過濾
         
         # 驗證條件
         area_ok = min_area <= obj['area'] <= max_area
-        first_conf_ok = obj['confidence'] >= first_confidence  # 第一次信心度過濾
-        second_conf_ok = obj['confidence'] >= min_confidence  # 第二次信心度過濾
-        conf_ok = first_conf_ok and second_conf_ok  # 兩次過濾都要通過
+        conf_ok = obj['confidence'] >= confidence  # 信心度過濾
         coord_ok = (obj['x1'] >= 0 and obj['y1'] >= 0 and 
                    obj['x2'] > obj['x1'] and obj['y2'] > obj['y1'] and
                    obj['x2'] <= imgwidth and obj['y2'] <= imgheight and
@@ -358,10 +446,10 @@ def draw_bounding_boxes(image, detected_objects, imgwidth, imgheight):
                 color, -1
             )
             
-            # 白色文字
+            # 黑色文字
             cv2.putText(
                 image, label, (obj["x1"], obj["y1"] - 5),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1
+                cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 1
             )
             
             marked_count += 1
@@ -428,10 +516,12 @@ def process_image(image_path, model):
         print(f"  正在預處理圖片...")
         image_preprocessed = preprocess_image(image_src)
         
-        # 儲存預處理後的圖片
-        preprocessed_path = os.path.join(PREPROCESSED_FOLDER, os.path.basename(image_path))
-        cv2.imwrite(preprocessed_path, image_preprocessed)
-        detection_image = image_preprocessed
+        # 儲存預處理後的圖片到「預處裡A3」資料夾（灰階）
+        preprocessed_path_a3 = os.path.join(PREPROCESSED_FOLDER_A3, os.path.basename(image_path))
+        cv2.imwrite(preprocessed_path_a3, image_preprocessed)
+
+        # 與 train_DB 一致：預處理產物為灰階，送入模型前轉為 BGR 三通道
+        detection_image = cv2.cvtColor(image_preprocessed, cv2.COLOR_GRAY2BGR)
     else:
         detection_image = image_src
     
@@ -446,12 +536,17 @@ def process_image(image_path, model):
     
     # 過濾偵測結果
     detected_objects, class_counts = filter_detections(detections, imgwidth, imgheight)
+    print(f"  程式層過濾後 - RFID: {class_counts['RFID']}, cell: {class_counts['cell']}, point: {class_counts['point']}")
     
     # 應用跨類別 NMS，過濾不同類別之間重疊的框（如 cell 和 point）
+    before_cross_nms_count = len(detected_objects)
     detected_objects = apply_cross_class_nms(
         detected_objects, 
         FILTER_CONFIG['cross_class_iou_threshold']
     )
+    after_cross_nms_count = len(detected_objects)
+    if before_cross_nms_count != after_cross_nms_count:
+        print(f"  跨類別 NMS 過濾掉 {before_cross_nms_count - after_cross_nms_count} 個框")
     
     # 重新計算類別計數
     class_counts = {'RFID': 0, 'cell': 0, 'point': 0}

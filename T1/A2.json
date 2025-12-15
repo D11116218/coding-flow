@@ -1,0 +1,68 @@
+{
+  "version": "3.2.2",
+  "flags": {},
+  "shapes": [
+    {
+      "label": "RFID",
+      "score": null,
+      "points": [
+        [
+          55.660377358490564,
+          203.77358490566036
+        ],
+        [
+          199.0566037735849,
+          203.77358490566036
+        ],
+        [
+          199.0566037735849,
+          451.88679245283015
+        ],
+        [
+          55.660377358490564,
+          451.88679245283015
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "difficult": false,
+      "shape_type": "rectangle",
+      "flags": {},
+      "attributes": {},
+      "kie_linking": []
+    },
+    {
+      "label": "cell",
+      "score": null,
+      "points": [
+        [
+          184.9056603773585,
+          449.05660377358487
+        ],
+        [
+          310.377358490566,
+          449.05660377358487
+        ],
+        [
+          310.377358490566,
+          529.2452830188679
+        ],
+        [
+          184.9056603773585,
+          529.2452830188679
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "difficult": false,
+      "shape_type": "rectangle",
+      "flags": {},
+      "attributes": {},
+      "kie_linking": []
+    }
+  ],
+  "imagePath": "A2.jpg",
+  "imageData": null,
+  "imageHeight": 622,
+  "imageWidth": 622
+}

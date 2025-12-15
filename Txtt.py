@@ -43,12 +43,22 @@ def convert_json_to_yolo_txt(json_path, image_path, output_txt_path):
     else:
         return False
     
+    # 類別映射：與 DB 訓練一致
+    label_map = {
+        'rfid': 0,
+        'cell': 1,
+        'point': 2
+    }
+    
     for shape in shapes:
         # 取得標籤（類別名稱）
-        label = shape.get('label', 'cell')
+        raw_label = shape.get('label', 'cell')
+        label = str(raw_label).strip().lower()
         
-        # 類別 ID（細胞是 0）
-        class_id = 0
+        # 類別 ID 對應；未知標籤則跳過
+        if label not in label_map:
+            continue
+        class_id = label_map[label]
         
         # 取得座標點
         points = shape.get('points', [])
@@ -187,7 +197,7 @@ if __name__ == '__main__':
     t2_folder.mkdir(exist_ok=True)
     
     # 取得 T1 資料夾中所有 JPG 檔案
-    image_extensions = ['*.jpg', '*.jpeg', '*.JPG', '*.JPEG']
+    image_extensions = ['*.jpg', '*.jpeg', '*.png', '*.JPG', '*.JPEG', '*.PNG']
     jpg_files = []
     for ext in image_extensions:
         jpg_files.extend(list(t1_folder.glob(ext)))

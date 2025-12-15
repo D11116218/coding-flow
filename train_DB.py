@@ -1,4 +1,4 @@
-# YOLO v8 細胞偵測模型訓練程式 - DB 訓練集
+﻿# YOLO v8 細胞偵測模型訓練程式 - DB 訓練集
 
 from ultralytics import YOLO
 import os
@@ -29,9 +29,9 @@ PREPROCESSED_YAML = 'DB預處理_dataset.yaml'
 
 # 訓練配置
 TRAIN_CONFIG = {
-    'base_model': 'yolov8n.pt',
+    'base_model': 'yolov8s.pt',
     'data_yaml': DATASET_YAML,
-    'epochs': 200,        # 最大訓練輪數（設定為80，確保至少能跑30次）
+    'epochs': 500,        # 最大訓練輪數（設定為80，確保至少能跑30次）
     'imgsz': 640,
     'batch': 16,
     'name': 'DB_cell_detection1',
@@ -44,25 +44,25 @@ TRAIN_CONFIG = {
 # 2. 降低顏色增強強度（避免過度擴增）
 AUGMENTATION_CONFIG = {
     # 顏色增強（降低強度，避免過度擴增）
-    'hsv_h': 0.01,      # 從 0.015 降低到 0.01
-    'hsv_s': 0.6,       # 從 0.7 降低到 0.6
-    'hsv_v': 0.3,       # 從 0.4 降低到 0.3
+    # 'hsv_h': 0.01,      # 從 0.015 降低到 0.01
+    # 'hsv_s': 0.6,       # 從 0.7 降低到 0.6
+    # 'hsv_v': 0.3,       # 從 0.4 降低到 0.3
     
     # 幾何變換（更保守，有助於小物體檢測）
-    'degrees': 3.0,      # 從 5.0 降低到 3.0（更保守）
-    'translate': 0.1,   # 保持不變
-    'scale': 0.15,      # 從 0.2 降低到 0.15（更保守）
-    'shear': 2.0,       # 保持不變
-    'perspective': 0.0005,  # 保持不變
+    'degrees': 3.0,      # 旋轉（3.0）
+    'translate': 0.1,    # 平移（0.1）
+    'scale': 0.15,       # 縮放（0.15）
+    # 'shear': 2.0,        # 剪切（2.0）
+    'perspective': 0.0005,  # 透視變換（0.0005）
     
     # 翻轉
-    'flipud': 0.5,
-    'fliplr': 0.5,
+    'flipud': 0.5,  #(0.5)
+    'fliplr': 0.5,  #(0.5)
     
     # 進階增強
-    'mosaic': 0.7,      # 從 0.5 增加到 0.7（更多馬賽克，有助於小物體）
-    'mixup': 0.1,       # 從 0.15 降低到 0.1（避免過度擴增）
-    'copy_paste': 0.0,  # 保持關閉
+    'mosaic': 0.7,      # 拼湊（0.7）
+    'mixup': 0.1,       # 加權標記疊加（0.1）
+    # 'copy_paste': 0.0,  # 保持關閉（0.0）
 }
 
 # 預處理參數（GIMP 風格，根據實際 GIMP 設定調整）
@@ -92,6 +92,13 @@ IMAGE_EXTENSIONS = ['*.jpg', '*.jpeg', '*.png', '*.JPG', '*.JPEG', '*.PNG']
 # ============================================================================
 # 工具函數
 # ============================================================================
+
+def print_train_config():
+    """顯示訓練與資料增強設定"""
+
+    print("\n預處理輸出路徑:")
+    print(f"  資料夾: {PREPROCESSED_FOLDER}")
+    print(f"  YAML: {PREPROCESSED_YAML}")
 
 def find_image_files(directory):
     """
@@ -410,7 +417,6 @@ def check_dataset():
     
     if not train_labels_exist:
         print("錯誤：DB/labels/train/ 資料夾中沒有 TXT 標註檔！")
-        print("請確認標註檔已轉換為 YOLO 格式（.txt）。")
         return False
     
     return True
@@ -457,21 +463,6 @@ def load_model():
         print(f"錯誤：無法載入模型: {e}")
         return None
 
-def print_train_config():
-    """列印訓練設定"""
-    print("\n預處理設定（GIMP 風格，根據實際 GIMP 設定）：")
-    print("  - 步驟 1：顏色轉灰階（GIMP 亮度方法：0.299*R + 0.587*G + 0.114*B）")
-    print(f"    GIMP 設定：Radius={PREPROCESS_PARAMS['grayscale_radius']}, Samples={PREPROCESS_PARAMS['grayscale_samples']}, Iterations={PREPROCESS_PARAMS['grayscale_iterations']}")
-    print(f"  - 步驟 2：銳利化（Unsharp Mask，Radius={PREPROCESS_PARAMS['sharpen_radius']}, Amount={PREPROCESS_PARAMS['sharpen_amount']}, Threshold={PREPROCESS_PARAMS['sharpen_threshold']}）")
-    print(f"  - 步驟 3：降低雜訊（非局部均值去噪，Strength={PREPROCESS_PARAMS['denoise_h']}）")
-    
-    print("\n資料擴增設定（優化配置）：")
-    print("  - 顏色增強：色調±1.0%、飽和度±60%、亮度±30%（降低強度，避免過度擴增）")
-    print("  - 翻轉：上下翻轉（50%機率）、左右翻轉（50%機率）")
-    print("  - 幾何變換：開啟（旋轉±3度、平移±10%、縮放0.85-1.15倍、剪切±2度、透視變換）")
-    print("    → 更保守的設定，有助於小物體（point）檢測")
-    print("  - 馬賽克增強：開啟（70%機率，增加以提升小物體檢測能力）")
-    print("  - 混合增強：開啟（10%機率，降低以避免過度擴增）")
 
 def train_model(model):
     """訓練模型"""
@@ -490,19 +481,19 @@ def train_model(model):
             plots=True,
             
             # 資料擴增參數
-            hsv_h=AUGMENTATION_CONFIG['hsv_h'],
-            hsv_s=AUGMENTATION_CONFIG['hsv_s'],
-            hsv_v=AUGMENTATION_CONFIG['hsv_v'],
+            # hsv_h=AUGMENTATION_CONFIG['hsv_h'],
+            # hsv_s=AUGMENTATION_CONFIG['hsv_s'],
+            # hsv_v=AUGMENTATION_CONFIG['hsv_v'],
             degrees=AUGMENTATION_CONFIG['degrees'],
-            translate=AUGMENTATION_CONFIG['translate'],
-            scale=AUGMENTATION_CONFIG['scale'],
-            shear=AUGMENTATION_CONFIG['shear'],
-            perspective=AUGMENTATION_CONFIG['perspective'],
+             translate=AUGMENTATION_CONFIG['translate'],
+            # scale=AUGMENTATION_CONFIG['scale'],
+            # shear=AUGMENTATION_CONFIG['shear'],
+            # perspective=AUGMENTATION_CONFIG['perspective'],
             flipud=AUGMENTATION_CONFIG['flipud'],
             fliplr=AUGMENTATION_CONFIG['fliplr'],
-            mosaic=AUGMENTATION_CONFIG['mosaic'],
+            # mosaic=AUGMENTATION_CONFIG['mosaic'],
             mixup=AUGMENTATION_CONFIG['mixup'],
-            copy_paste=AUGMENTATION_CONFIG['copy_paste'],
+            # copy_paste=AUGMENTATION_CONFIG['copy_paste'],
         )
         
         print("\n" + "=" * 60)
