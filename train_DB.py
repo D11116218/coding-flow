@@ -49,7 +49,7 @@ AUGMENTATION_CONFIG = {
     # 'hsv_v': 0.3,       # 從 0.4 降低到 0.3
     
     # 幾何變換（更保守，有助於小物體檢測）
-    'degrees': 3.0,      # 旋轉（3.0）
+    # 'degrees': 3.0,      # 旋轉（3.0）
     'translate': 0.1,    # 平移（0.1）
     'scale': 0.15,       # 縮放（0.15）
     # 'shear': 2.0,        # 剪切（2.0）
@@ -487,7 +487,7 @@ def train_model(model):
             # hsv_h=AUGMENTATION_CONFIG['hsv_h'],
             # hsv_s=AUGMENTATION_CONFIG['hsv_s'],
             # hsv_v=AUGMENTATION_CONFIG['hsv_v'],
-            degrees=AUGMENTATION_CONFIG['degrees'],
+            # degrees=AUGMENTATION_CONFIG['degrees'],
              translate=AUGMENTATION_CONFIG['translate'],
             # scale=AUGMENTATION_CONFIG['scale'],
             # shear=AUGMENTATION_CONFIG['shear'],

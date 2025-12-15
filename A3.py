@@ -32,14 +32,15 @@ FILTER_CONFIG = {
     'first_confidence_by_class': {
         # 提高類別特定的信心度門檻，降低低分框殘留
         'RFID': 0.7,   # 原 0.049 → 0.55（保持高信心）
-        'cell': 0.45,   # 原 0.135 → 0.18
-        'point': 0.67       # 原 0.0047 → 0.10
+        'cell': 0.78,   # 原 0.135 → 0.18
+        'point': 0.85       # 原 0.0047 → 0.10
     },
     # YOLO 模型層使用最低的信心度值（確保所有類別都能通過）
     'yolo_conf_threshold': 0.05,  # 原 0.001 → 0.05，先在模型層砍掉極低分框
     # NMS（非極大值抑制）參數：過濾重疊的檢測框
-    'yolo_iou_threshold': 0.45,   # YOLO 內建 NMS IoU 閾值（只在同類別內過濾）
-    'cross_class_iou_threshold': 0.3,  # 跨類別 NMS IoU 閾值（0.1 太低會過度過濾，正常範圍 0.5-0.6）
+    'yolo_iou_threshold': 0.25,   # YOLO 內建 NMS IoU 閾值（越低越積極過濾，0.25 會過濾更多重疊框）
+    'same_class_nms_threshold': 0.15,  # 程式層同類別 NMS IoU 閾值（越低越積極，0.25 會更積極過濾重疊的 cell）
+    'cross_class_iou_threshold': 0.5,  # 跨類別 NMS IoU 閾值（越高越寬鬆）
     
     # 面積過濾
     'min_area_by_class': {
@@ -341,6 +342,48 @@ def calculate_iou(box1, box2):
     
     return inter_area / union_area
 
+def apply_same_class_nms(detected_objects, iou_threshold):
+    """同類別 NMS：過濾同一類別內重疊的框，保留信心度最高的"""
+    if len(detected_objects) <= 1:
+        return detected_objects
+    
+    # 按類別分組
+    by_class = {}
+    for obj in detected_objects:
+        class_name = obj['class']
+        if class_name not in by_class:
+            by_class[class_name] = []
+        by_class[class_name].append(obj)
+    
+    # 對每個類別分別做 NMS
+    result = []
+    for class_name, objects in by_class.items():
+        if len(objects) <= 1:
+            result.extend(objects)
+            continue
+        
+        # 按信心度降序排序
+        sorted_objects = sorted(objects, key=lambda x: x['confidence'], reverse=True)
+        keep = []
+        
+        while sorted_objects:
+            current = sorted_objects.pop(0)
+            keep_current = True
+            
+            for kept in keep:
+                iou = calculate_iou(current, kept)
+                if iou > iou_threshold:
+                    # 重疊，保留信心度更高的（current 已經排序過，所以 current 信心度更高）
+                    keep_current = False
+                    break
+            
+            if keep_current:
+                keep.append(current)
+        
+        result.extend(keep)
+    
+    return result
+
 def apply_cross_class_nms(detected_objects, iou_threshold):
     """跨類別 NMS，並對類別給優先權：RFID > cell > point"""
     if len(detected_objects) <= 1:
@@ -537,6 +580,23 @@ def process_image(image_path, model):
     # 過濾偵測結果
     detected_objects, class_counts = filter_detections(detections, imgwidth, imgheight)
     print(f"  程式層過濾後 - RFID: {class_counts['RFID']}, cell: {class_counts['cell']}, point: {class_counts['point']}")
+    
+    # 診斷：檢查 cell 框之間的重疊情況
+    cell_objects = [obj for obj in detected_objects if obj['class'] == 'cell']
+    if len(cell_objects) > 1:
+        print(f"  🔍 檢查 {len(cell_objects)} 個 cell 框的重疊情況：")
+        for i, obj1 in enumerate(cell_objects):
+            for j, obj2 in enumerate(cell_objects[i+1:], start=i+1):
+                iou = calculate_iou(obj1, obj2)
+                if iou > 0.3:  # 顯示 IoU > 0.3 的重疊
+                    print(f"    cell {i+1} (conf={obj1['confidence']:.2f}) 與 cell {j+1} (conf={obj2['confidence']:.2f}) IoU={iou:.3f}")
+    
+    # 程式層同類別 NMS：針對同類別內的重疊框再做一次過濾（YOLO 內建 NMS 可能不夠）
+    before_same_nms = len(detected_objects)
+    detected_objects = apply_same_class_nms(detected_objects, FILTER_CONFIG['same_class_nms_threshold'])
+    after_same_nms = len(detected_objects)
+    if before_same_nms != after_same_nms:
+        print(f"  同類別 NMS 過濾掉 {before_same_nms - after_same_nms} 個重疊框")
     
     # 應用跨類別 NMS，過濾不同類別之間重疊的框（如 cell 和 point）
     before_cross_nms_count = len(detected_objects)
