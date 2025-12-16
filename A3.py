@@ -31,9 +31,9 @@ FILTER_CONFIG = {
     # 注意：YOLO 模型層使用最低值，然後在程式層進行類別特定的過濾
     'first_confidence_by_class': {
         # 提高類別特定的信心度門檻，降低低分框殘留
-        'RFID': 0.75,   # (0.75 ok)
-        'cell': 0.65,  # (0.55 ok)
-        'point': 0.55  # (0.6 ok)
+        'RFID': 0.5,   # (0.75 ok)
+        'cell': 0.5,  # (0.55 ok)
+        'point': 0.5  # (0.6 ok)
     },
     # YOLO 模型層使用最低的信心度值
     'yolo_conf_threshold': 0.05,  # 原 0.001 → 0.05，先在模型層砍掉極低分框
