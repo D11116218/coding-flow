@@ -19,7 +19,7 @@ PREPROCESSED_FOLDER = '預處理'   # 預處理後的圖片資料夾
 IMAGE_EXTENSIONS = ['*.jpg', '*.jpeg', '*.png', '*.JPG', '*.JPEG', '*.PNG']
 
 # 模型路徑
-MODEL_PATH = r"C:\Users\willes.chen\BB\runs\detect\DB_cell_detection1\weights\best.pt"
+MODEL_PATH = r"C:\Users\willes.chen\BB\runs\detect\DB_cell_detection12\weights\best.pt"
 
 # 預處理設定
 USE_PREPROCESSING = True  # True = 使用預處理，False = 使用原始圖片
@@ -31,15 +31,15 @@ FILTER_CONFIG = {
     # 注意：YOLO 模型層使用最低值，然後在程式層進行類別特定的過濾
     'first_confidence_by_class': {
         # 提高類別特定的信心度門檻，降低低分框殘留
-        'RFID': 0.82,   # (0.81 ok)
-        'cell': 0.67,  # (0.69 ok)
-        'point': 0.7  # (0.69 ok)
+        'RFID': 0.5,   # (0.81 ok)
+        'cell': 0.5,  # (0.69 ok)
+        'point': 0.4  # (0.69 ok)
     },
     # YOLO 模型層使用最低的信心度值
-    'yolo_conf_threshold': 0.05,  # 原 0.001 → 0.05，先在模型層砍掉極低分框
+    'yolo_conf_threshold': 0.0001,  # 原 0.001 → 0.05，先在模型層砍掉極低分框
     # NMS（非極大值抑制）數：過濾重疊的檢測框
     'yolo_iou_threshold': 0.2,   # YOLO 內建 NMS IoU 閾值0.25（越低越積極過濾）
-    'same_class_nms_threshold': 0.15,  # 同類別 NMS IoU 閾值0.15（越低越積極）
+    'same_class_nms_threshold': 0.05,  # 同類別 NMS IoU 閾值0.15（越低越積極）
     'cross_class_iou_threshold': 0.5,  # 跨類別 NMS IoU 閾值0.5（越高越寬鬆）
     
     # 面積過濾
