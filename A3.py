@@ -31,16 +31,16 @@ FILTER_CONFIG = {
     # 注意：YOLO 模型層使用最低值，然後在程式層進行類別特定的過濾
     'first_confidence_by_class': {
         # 提高類別特定的信心度門檻，降低低分框殘留
-        'RFID': 0.5,   # (0.75 ok)
-        'cell': 0.5,  # (0.55 ok)
-        'point': 0.5  # (0.6 ok)
+        'RFID': 0.82,   # (0.81 ok)
+        'cell': 0.67,  # (0.69 ok)
+        'point': 0.7  # (0.69 ok)
     },
     # YOLO 模型層使用最低的信心度值
     'yolo_conf_threshold': 0.05,  # 原 0.001 → 0.05，先在模型層砍掉極低分框
-    # NMS（非極大值抑制）參數：過濾重疊的檢測框
-    'yolo_iou_threshold': 0.25,   # YOLO 內建 NMS IoU 閾值（越低越積極過濾）
-    'same_class_nms_threshold': 0.15,  # 同類別 NMS IoU 閾值（越低越積極）
-    'cross_class_iou_threshold': 0.5,  # 跨類別 NMS IoU 閾值（越高越寬鬆）
+    # NMS（非極大值抑制）數：過濾重疊的檢測框
+    'yolo_iou_threshold': 0.2,   # YOLO 內建 NMS IoU 閾值0.25（越低越積極過濾）
+    'same_class_nms_threshold': 0.15,  # 同類別 NMS IoU 閾值0.15（越低越積極）
+    'cross_class_iou_threshold': 0.5,  # 跨類別 NMS IoU 閾值0.5（越高越寬鬆）
     
     # 面積過濾
     'min_area_by_class': {
@@ -607,6 +607,20 @@ def process_image(image_path, model):
     after_cross_nms_count = len(detected_objects)
     if before_cross_nms_count != after_cross_nms_count:
         print(f"  跨類別 NMS 過濾掉 {before_cross_nms_count - after_cross_nms_count} 個框")
+    
+    # 針對 RFID 只保留信心值最高的一個
+    rfid_objects = [obj for obj in detected_objects if obj['class'] == 'RFID']
+    other_objects = [obj for obj in detected_objects if obj['class'] != 'RFID']
+    
+    if len(rfid_objects) > 1:
+        # 按信心度降序排序，只保留第一個（信心度最高的）
+        rfid_objects.sort(key=lambda x: x['confidence'], reverse=True)
+        kept_rfid = rfid_objects[0]
+        removed_count = len(rfid_objects) - 1
+        print(f"  RFID 過濾：從 {len(rfid_objects)} 個中只保留信心值最高的一個 (conf={kept_rfid['confidence']:.4f})，移除 {removed_count} 個")
+        detected_objects = [kept_rfid] + other_objects
+    else:
+        detected_objects = rfid_objects + other_objects
     
     # 重新計算類別計數
     class_counts = {'RFID': 0, 'cell': 0, 'point': 0}
