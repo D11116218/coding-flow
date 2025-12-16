@@ -43,24 +43,24 @@ TRAIN_CONFIG = {
 # 1. 更保守的幾何變換（有助於小物體檢測）
 # 2. 降低顏色增強強度（避免過度擴增）
 AUGMENTATION_CONFIG = {
-    # 顏色增強（降低強度，避免過度擴增）
-    # 'hsv_h': 0.01,      # 從 0.015 降低到 0.01
-    # 'hsv_s': 0.6,       # 從 0.7 降低到 0.6
-    # 'hsv_v': 0.3,       # 從 0.4 降低到 0.3
+    # 顏色增強（輕微開啟，幫助模型對文字區域的顏色變化不敏感）
+    # 'hsv_h': 0.01,      # 色相變化（輕微，0.01）
+    # 'hsv_s': 0.5,       # 飽和度變化（原0.6）
+    # 'hsv_v': 0.3,       # 亮度變化（中等，0.3）
     
     # 幾何變換（更保守，有助於小物體檢測）
     # 'degrees': 3.0,      # 旋轉（3.0）
-    'translate': 0.1,    # 平移（0.1）
+    'translate': 0.2,    # 平移（0.1）
     'scale': 0.15,       # 縮放（0.15）
     # 'shear': 2.0,        # 剪切（2.0）
-    'perspective': 0.0005,  # 透視變換（0.0005）
+    # 'perspective': 0.0005,  # 透視變換（0.0005）
     
     # 翻轉
     'flipud': 0.5,  #(0.5)
     'fliplr': 0.5,  #(0.5)
     
     # 進階增強
-    'mosaic': 0.7,      # 拼湊（0.7）
+    'mosaic': 0.3,      # 拼湊（原0.3）
     'mixup': 0.1,       # 加權標記疊加（0.1）
     # 'copy_paste': 0.0,  # 保持關閉（0.0）
 }
@@ -484,19 +484,19 @@ def train_model(model):
             plots=True,
             
             # 資料擴增參數
-            # hsv_h=AUGMENTATION_CONFIG['hsv_h'],
-            # hsv_s=AUGMENTATION_CONFIG['hsv_s'],
-            # hsv_v=AUGMENTATION_CONFIG['hsv_v'],
-            # degrees=AUGMENTATION_CONFIG['degrees'],
-             translate=AUGMENTATION_CONFIG['translate'],
-            # scale=AUGMENTATION_CONFIG['scale'],
-            # shear=AUGMENTATION_CONFIG['shear'],
-            # perspective=AUGMENTATION_CONFIG['perspective'],
-            flipud=AUGMENTATION_CONFIG['flipud'],
-            fliplr=AUGMENTATION_CONFIG['fliplr'],
-            # mosaic=AUGMENTATION_CONFIG['mosaic'],
-            mixup=AUGMENTATION_CONFIG['mixup'],
-            # copy_paste=AUGMENTATION_CONFIG['copy_paste'],
+            # hsv_h=AUGMENTATION_CONFIG['hsv_h'],   # 顏色增強（開啟：幫助模型對文字顏色不敏感）
+            # hsv_s=AUGMENTATION_CONFIG['hsv_s'],   # 顏色增強（開啟：幫助模型對文字顏色不敏感）
+            # hsv_v=AUGMENTATION_CONFIG['hsv_v'],   # 顏色增強（開啟：幫助模型對文字顏色不敏感）
+            # degrees=AUGMENTATION_CONFIG['degrees'],    # 旋轉
+            translate=AUGMENTATION_CONFIG['translate'],# 平移
+            scale=AUGMENTATION_CONFIG['scale'],        # 縮放
+            # shear=AUGMENTATION_CONFIG['shear'],   # 形變增強
+            # perspective=AUGMENTATION_CONFIG['perspective'],  # 透視變換
+            flipud=AUGMENTATION_CONFIG['flipud'],      # 翻轉
+            fliplr=AUGMENTATION_CONFIG['fliplr'],      # 翻轉
+            mosaic=AUGMENTATION_CONFIG['mosaic'], # 拼湊（開啟：增加背景多樣性，幫助模型學會忽略文字）
+            # mixup=AUGMENTATION_CONFIG['mixup'],        # 加權標記疊加
+            # copy_paste=AUGMENTATION_CONFIG['copy_paste'], # 貼合
         )
         
         print("\n" + "=" * 60)
