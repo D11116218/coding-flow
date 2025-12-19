@@ -43,10 +43,10 @@ TRAIN_CONFIG = {
 # 1. 更保守的幾何變換（有助於小物體檢測）
 # 2. 降低顏色增強強度（避免過度擴增）
 AUGMENTATION_CONFIG = {
-    # 顏色增強（輕微開啟，幫助模型對文字區域的顏色變化不敏感）
-    # 'hsv_h': 0.01,      # 色相變化（輕微，0.01）
-    # 'hsv_s': 0.5,       # 飽和度變化（原0.6）
-    # 'hsv_v': 0.3,       # 亮度變化（中等，0.3）
+    # 顏色增強（開啟：幫助模型對文字區域的顏色變化不敏感）
+    'hsv_h': 0.01,      # 色相變化（輕微，0.01）
+    'hsv_s': 0.5,       # 飽和度變化（原0.6）
+    'hsv_v': 0.3,       # 亮度變化（中等，0.3）
     
     # 幾何變換（更保守，有助於小物體檢測）
     'degrees': 3.0,      # 旋轉（3.0）
@@ -484,9 +484,9 @@ def train_model(model):
             plots=True,
             
             # 資料擴增參數
-            # hsv_h=AUGMENTATION_CONFIG['hsv_h'],   # 顏色增強（開啟：幫助模型對文字顏色不敏感）
-            # hsv_s=AUGMENTATION_CONFIG['hsv_s'],   # 顏色增強（開啟：幫助模型對文字顏色不敏感）
-            # hsv_v=AUGMENTATION_CONFIG['hsv_v'],   # 顏色增強（開啟：幫助模型對文字顏色不敏感）
+            hsv_h=AUGMENTATION_CONFIG['hsv_h'],   # 顏色增強（開啟：幫助模型對文字顏色不敏感）
+            hsv_s=AUGMENTATION_CONFIG['hsv_s'],   # 顏色增強（開啟：幫助模型對文字顏色不敏感）
+            hsv_v=AUGMENTATION_CONFIG['hsv_v'],   # 顏色增強（開啟：幫助模型對文字顏色不敏感）
             # degrees=AUGMENTATION_CONFIG['degrees'],    # 旋轉
             translate=AUGMENTATION_CONFIG['translate'],# 平移
             scale=AUGMENTATION_CONFIG['scale'],        # 縮放
