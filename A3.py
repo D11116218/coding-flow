@@ -1,54 +1,11 @@
 ﻿#!/usr/bin/env python3
 # YOLOv12n 細胞偵測程式 - 圖片標記
 
-"""
-自動環境檢測：如果 ultralytics 不可用，自動使用 Poetry 環境執行
-"""
-
-import sys
 import os
-import subprocess
-
-def check_and_switch_environment():
-    """檢查 ultralytics 是否可用，如果不可用則使用 Poetry 環境重新執行"""
-    try:
-        import ultralytics
-        # 如果成功導入，直接返回，繼續執行
-        return True
-    except ImportError:
-        # 如果無法導入，使用 Poetry 環境重新執行
-        print("⚠️  檢測到 ultralytics 模組不可用，自動切換到 Poetry 環境...")
-        
-        # 獲取當前腳本的路徑
-        script_path = os.path.abspath(__file__)
-        
-        # 使用 Poetry 環境執行
-        try:
-            result = subprocess.run(
-                ['poetry', 'run', 'python', script_path] + sys.argv[1:],
-                cwd=os.path.dirname(script_path)
-            )
-            sys.exit(result.returncode)
-        except FileNotFoundError:
-            print("❌ 錯誤：找不到 poetry 命令！")
-            print("請確保已安裝 Poetry，或使用以下方式執行：")
-            print("  poetry run python A3.py")
-            print("  或")
-            print("  ./run_A3.sh")
-            sys.exit(1)
-        except Exception as e:
-            print(f"❌ 執行錯誤: {e}")
-            sys.exit(1)
-
-# 在導入其他模組之前先檢查環境
-if __name__ == "__main__":
-    check_and_switch_environment()
-
+import glob
 import cv2
 import numpy as np
 from ultralytics import YOLO
-import os
-import glob
 
 # ============================================================================
 # 配置參數
@@ -110,7 +67,7 @@ CLASS_MAPPING = {
     2: 'point'
 }
 
-# 預處理參數（GIMP 風格，根據實際 GIMP 設定調整）
+# 預處理參數（GIMP 風格，與 train_DB.py 保持一致）
 PREPROCESS_PARAMS = {
     # 顏色轉灰階參數（GIMP 的顏色轉灰階設定）
     # 注意：GIMP 的顏色轉灰階有 Radius/Samples/Iterations 參數，這是特殊算法
@@ -120,12 +77,12 @@ PREPROCESS_PARAMS = {
     'grayscale_iterations': 10,     # GIMP Iterations = 10
     'grayscale_enhance_shadows': False,  # GIMP Enhance Shadows = 未勾選
     
-    # 銳利化參數（對應 GIMP 的銳利化設定）
+    # 銳利化參數（對應 GIMP 的銳利化設定，與 train_DB.py 一致）
     'sharpen_radius': 3.0,          # 銳化半徑（GIMP Radius = 3.000）
     'sharpen_amount': 5.527,        # 銳化強度（GIMP Amount = 5.527）
     'sharpen_threshold': 0.0,       # 銳化閾值（GIMP Threshold = 0.000）
     
-    # 降低雜訊參數（對應 GIMP 的降低雜訊設定）
+    # 降低雜訊參數（對應 GIMP 的降低雜訊設定，與 train_DB.py 一致）
     'denoise_h': 11.0,              # 過濾強度（GIMP Strength = 11）
     'denoise_templateWindowSize': 7, # 模板窗口大小（必須為奇數，建議 5-9）
     'denoise_searchWindowSize': 21,  # 搜索窗口大小（必須為奇數，建議 15-25）
@@ -219,14 +176,14 @@ def denoise_image(image, strength, template_window_size, search_window_size):
 
 def preprocess_image(image):
     """
-    預處理圖片（與 train_DB 相同）
+    預處理圖片（與 train_DB.py 完全一致）
     依序使用：顏色轉灰階、銳利化、降低雜訊
     
     參數：
         image: 輸入圖片（BGR 格式）
     
     返回：
-        處理後的灰階圖片
+        處理後的灰階圖片（與 train_DB.py 一致）
     """
     # 1. 顏色轉灰階（GIMP 亮度方法）
     gray = convert_to_grayscale_gimp(image)
@@ -247,6 +204,7 @@ def preprocess_image(image):
         PREPROCESS_PARAMS['denoise_searchWindowSize']
     )
     
+    # 與 train_DB.py 一致：返回灰階圖片
     return denoised
 
 # ============================================================================
