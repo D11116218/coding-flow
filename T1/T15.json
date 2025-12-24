@@ -1,0 +1,126 @@
+{
+  "version": "3.2.2",
+  "flags": {},
+  "shapes": [
+    {
+      "label": "RFID",
+      "score": null,
+      "points": [
+        [
+          100.76923076923076,
+          103.07692307692308
+        ],
+        [
+          322.3076923076923,
+          103.07692307692308
+        ],
+        [
+          322.3076923076923,
+          343.07692307692304
+        ],
+        [
+          100.76923076923076,
+          343.07692307692304
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "difficult": false,
+      "shape_type": "rectangle",
+      "flags": {},
+      "attributes": {},
+      "kie_linking": []
+    },
+    {
+      "label": "point",
+      "score": null,
+      "points": [
+        [
+          501.14942528735634,
+          466.42492012779553
+        ],
+        [
+          514.0287539936102,
+          466.42492012779553
+        ],
+        [
+          514.0287539936102,
+          477.58620689655174
+        ],
+        [
+          501.14942528735634,
+          477.58620689655174
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "difficult": false,
+      "shape_type": "rectangle",
+      "flags": {},
+      "attributes": {},
+      "kie_linking": []
+    },
+    {
+      "label": "point",
+      "score": null,
+      "points": [
+        [
+          488.78913738019173,
+          462.91054313099045
+        ],
+        [
+          497.4153354632588,
+          462.91054313099045
+        ],
+        [
+          497.4153354632588,
+          472.814696485623
+        ],
+        [
+          488.78913738019173,
+          472.814696485623
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "difficult": false,
+      "shape_type": "rectangle",
+      "flags": {},
+      "attributes": {},
+      "kie_linking": []
+    },
+    {
+      "label": "point",
+      "score": null,
+      "points": [
+        [
+          95.56650246305418,
+          132.0197044334975
+        ],
+        [
+          112.807881773399,
+          132.0197044334975
+        ],
+        [
+          112.807881773399,
+          145.81280788177338
+        ],
+        [
+          95.56650246305418,
+          145.81280788177338
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "difficult": false,
+      "shape_type": "rectangle",
+      "flags": {},
+      "attributes": {},
+      "kie_linking": []
+    }
+  ],
+  "imagePath": "T15.jpg",
+  "imageData": null,
+  "imageHeight": 614,
+  "imageWidth": 614
+}

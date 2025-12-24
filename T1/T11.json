@@ -1,0 +1,97 @@
+{
+  "version": "3.2.2",
+  "flags": {},
+  "shapes": [
+    {
+      "label": "RFID",
+      "score": null,
+      "points": [
+        [
+          49.71098265895954,
+          202.89017341040463
+        ],
+        [
+          197.10982658959537,
+          202.89017341040463
+        ],
+        [
+          197.10982658959537,
+          453.757225433526
+        ],
+        [
+          49.71098265895954,
+          453.757225433526
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "difficult": false,
+      "shape_type": "rectangle",
+      "flags": {},
+      "attributes": {},
+      "kie_linking": []
+    },
+    {
+      "label": "point",
+      "score": null,
+      "points": [
+        [
+          535.31906614786,
+          293.68482490272373
+        ],
+        [
+          546.2140077821012,
+          293.68482490272373
+        ],
+        [
+          546.2140077821012,
+          305.74708171206225
+        ],
+        [
+          535.31906614786,
+          305.74708171206225
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "difficult": false,
+      "shape_type": "rectangle",
+      "flags": {},
+      "attributes": {},
+      "kie_linking": []
+    },
+    {
+      "label": "cell",
+      "score": null,
+      "points": [
+        [
+          184.91304347826087,
+          452.06280193236717
+        ],
+        [
+          310.5169082125604,
+          452.06280193236717
+        ],
+        [
+          310.5169082125604,
+          528.8743961352658
+        ],
+        [
+          184.91304347826087,
+          528.8743961352658
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "difficult": false,
+      "shape_type": "rectangle",
+      "flags": {},
+      "attributes": {},
+      "kie_linking": []
+    }
+  ],
+  "imagePath": "T11.jpg",
+  "imageData": null,
+  "imageHeight": 622,
+  "imageWidth": 622
+}

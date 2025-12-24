@@ -1,0 +1,126 @@
+{
+  "version": "3.2.2",
+  "flags": {},
+  "shapes": [
+    {
+      "label": "RFID",
+      "score": null,
+      "points": [
+        [
+          59.090909090909086,
+          208.44155844155844
+        ],
+        [
+          178.57142857142856,
+          208.44155844155844
+        ],
+        [
+          178.57142857142856,
+          437.6623376623377
+        ],
+        [
+          59.090909090909086,
+          437.6623376623377
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "difficult": false,
+      "shape_type": "rectangle",
+      "flags": {},
+      "attributes": {},
+      "kie_linking": []
+    },
+    {
+      "label": "point",
+      "score": null,
+      "points": [
+        [
+          213.82978723404253,
+          76.59574468085106
+        ],
+        [
+          227.65957446808508,
+          76.59574468085106
+        ],
+        [
+          227.65957446808508,
+          89.36170212765957
+        ],
+        [
+          213.82978723404253,
+          89.36170212765957
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "difficult": false,
+      "shape_type": "rectangle",
+      "flags": {},
+      "attributes": {},
+      "kie_linking": []
+    },
+    {
+      "label": "cell",
+      "score": null,
+      "points": [
+        [
+          305.8510638297872,
+          171.27659574468083
+        ],
+        [
+          418.6170212765957,
+          171.27659574468083
+        ],
+        [
+          418.6170212765957,
+          264.89361702127655
+        ],
+        [
+          305.8510638297872,
+          264.89361702127655
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "difficult": false,
+      "shape_type": "rectangle",
+      "flags": {},
+      "attributes": {},
+      "kie_linking": []
+    },
+    {
+      "label": "point",
+      "score": null,
+      "points": [
+        [
+          338.98916967509024,
+          541.8772563176896
+        ],
+        [
+          351.6245487364621,
+          541.8772563176896
+        ],
+        [
+          351.6245487364621,
+          553.0685920577617
+        ],
+        [
+          338.98916967509024,
+          553.0685920577617
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "difficult": false,
+      "shape_type": "rectangle",
+      "flags": {},
+      "attributes": {},
+      "kie_linking": []
+    }
+  ],
+  "imagePath": "20251204_074854_Z22222DS3620.jpg",
+  "imageData": null,
+  "imageHeight": 630,
+  "imageWidth": 630
+}

@@ -1,0 +1,126 @@
+{
+  "version": "3.2.2",
+  "flags": {},
+  "shapes": [
+    {
+      "label": "RFID",
+      "score": null,
+      "points": [
+        [
+          48.811188811188785,
+          186.57342657342656
+        ],
+        [
+          190.06993006993005,
+          186.57342657342656
+        ],
+        [
+          190.06993006993005,
+          436.9230769230769
+        ],
+        [
+          48.811188811188785,
+          436.9230769230769
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "difficult": false,
+      "shape_type": "rectangle",
+      "flags": {},
+      "attributes": {},
+      "kie_linking": []
+    },
+    {
+      "label": "point",
+      "score": null,
+      "points": [
+        [
+          294.4017094017094,
+          76.02564102564102
+        ],
+        [
+          306.36752136752136,
+          76.02564102564102
+        ],
+        [
+          306.36752136752136,
+          90.98290598290599
+        ],
+        [
+          294.4017094017094,
+          90.98290598290599
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "difficult": false,
+      "shape_type": "rectangle",
+      "flags": {},
+      "attributes": {},
+      "kie_linking": []
+    },
+    {
+      "label": "cell",
+      "score": null,
+      "points": [
+        [
+          355.94017094017096,
+          65.34188034188034
+        ],
+        [
+          373.46153846153845,
+          65.34188034188034
+        ],
+        [
+          373.46153846153845,
+          81.15384615384616
+        ],
+        [
+          355.94017094017096,
+          81.15384615384616
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "difficult": false,
+      "shape_type": "rectangle",
+      "flags": {},
+      "attributes": {},
+      "kie_linking": []
+    },
+    {
+      "label": "point",
+      "score": null,
+      "points": [
+        [
+          538.8461538461538,
+          238.41880341880344
+        ],
+        [
+          552.5213675213676,
+          238.41880341880344
+        ],
+        [
+          552.5213675213676,
+          252.09401709401712
+        ],
+        [
+          538.8461538461538,
+          252.09401709401712
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "difficult": false,
+      "shape_type": "rectangle",
+      "flags": {},
+      "attributes": {},
+      "kie_linking": []
+    }
+  ],
+  "imagePath": "T12.jpg",
+  "imageData": null,
+  "imageHeight": 620,
+  "imageWidth": 620
+}

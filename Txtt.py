@@ -1,8 +1,48 @@
 # JSON 轉 TXT 標註檔轉換工具
 # 從 T1 資料夾讀取 JPG 檔案，尋找對應的 JSON 標註檔，轉換為 YOLO 格式的 TXT，輸出到 T2 資料夾
 
-import json
+"""
+自動環境檢測：如果 cv2 不可用，自動使用 Poetry 環境執行
+"""
+
+import sys
 import os
+import subprocess
+
+def check_and_switch_environment():
+    """檢查 cv2 是否可用，如果不可用則使用 Poetry 環境重新執行"""
+    try:
+        import cv2
+        # 如果成功導入，直接返回，繼續執行
+        return True
+    except ImportError:
+        # 如果無法導入，使用 Poetry 環境重新執行
+        print("⚠️  檢測到 cv2 模組不可用，自動切換到 Poetry 環境...")
+        
+        # 獲取當前腳本的路徑
+        script_path = os.path.abspath(__file__)
+        
+        # 使用 Poetry 環境執行
+        try:
+            result = subprocess.run(
+                ['poetry', 'run', 'python', script_path] + sys.argv[1:],
+                cwd=os.path.dirname(script_path)
+            )
+            sys.exit(result.returncode)
+        except FileNotFoundError:
+            print("❌ 錯誤：找不到 poetry 命令！")
+            print("請確保已安裝 Poetry，或使用以下方式執行：")
+            print("  poetry run python Txtt.py")
+            sys.exit(1)
+        except Exception as e:
+            print(f"❌ 執行錯誤: {e}")
+            sys.exit(1)
+
+# 在導入其他模組之前先檢查環境
+if __name__ == "__main__":
+    check_and_switch_environment()
+
+import json
 import cv2
 from pathlib import Path
 import shutil

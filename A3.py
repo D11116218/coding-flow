@@ -1,4 +1,48 @@
-﻿# YOLO v8 細胞偵測程式 - 圖片標記
+﻿#!/usr/bin/env python3
+# YOLOv12n 細胞偵測程式 - 圖片標記
+
+"""
+自動環境檢測：如果 ultralytics 不可用，自動使用 Poetry 環境執行
+"""
+
+import sys
+import os
+import subprocess
+
+def check_and_switch_environment():
+    """檢查 ultralytics 是否可用，如果不可用則使用 Poetry 環境重新執行"""
+    try:
+        import ultralytics
+        # 如果成功導入，直接返回，繼續執行
+        return True
+    except ImportError:
+        # 如果無法導入，使用 Poetry 環境重新執行
+        print("⚠️  檢測到 ultralytics 模組不可用，自動切換到 Poetry 環境...")
+        
+        # 獲取當前腳本的路徑
+        script_path = os.path.abspath(__file__)
+        
+        # 使用 Poetry 環境執行
+        try:
+            result = subprocess.run(
+                ['poetry', 'run', 'python', script_path] + sys.argv[1:],
+                cwd=os.path.dirname(script_path)
+            )
+            sys.exit(result.returncode)
+        except FileNotFoundError:
+            print("❌ 錯誤：找不到 poetry 命令！")
+            print("請確保已安裝 Poetry，或使用以下方式執行：")
+            print("  poetry run python A3.py")
+            print("  或")
+            print("  ./run_A3.sh")
+            sys.exit(1)
+        except Exception as e:
+            print(f"❌ 執行錯誤: {e}")
+            sys.exit(1)
+
+# 在導入其他模組之前先檢查環境
+if __name__ == "__main__":
+    check_and_switch_environment()
 
 import cv2
 import numpy as np
@@ -19,7 +63,7 @@ PREPROCESSED_FOLDER = '預處理'   # 預處理後的圖片資料夾
 IMAGE_EXTENSIONS = ['*.jpg', '*.jpeg', '*.png', '*.JPG', '*.JPEG', '*.PNG']
 
 # 模型路徑
-MODEL_PATH = r"C:\Users\willes.chen\BB\runs\detect\DB_cell_detection12\weights\best.pt"
+MODEL_PATH = "runs/DB_cell_detection1/weights/best.pt"
 
 # 預處理設定
 USE_PREPROCESSING = True  # True = 使用預處理，False = 使用原始圖片
@@ -647,7 +691,7 @@ def process_image(image_path, model):
 def main():
     """主程式流程"""
     print("=" * 60)
-    print("YOLO v8 細胞偵測 - 圖片標記")
+    print("YOLOv12n 細胞偵測 - 圖片標記")
     print("=" * 60)
     
     # 確保資料夾存在
@@ -665,7 +709,7 @@ def main():
     print("=" * 60)
     
     # 載入模型
-    print("正在載入 YOLO v8 模型...")
+    print("正在載入 YOLOv12n 模型...")
     try:
         model = YOLO(MODEL_PATH)
         print(f"模型載入成功: {MODEL_PATH}")
