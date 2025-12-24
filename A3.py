@@ -20,7 +20,7 @@ PREPROCESSED_FOLDER = '預處理'   # 預處理後的圖片資料夾
 IMAGE_EXTENSIONS = ['*.jpg', '*.jpeg', '*.png', '*.JPG', '*.JPEG', '*.PNG']
 
 # 模型路徑
-MODEL_PATH = "runs/DB_cell_detection1/weights/best.pt"
+MODEL_PATH = "runs/DB_cell_detection12/weights/best.pt"
 
 # 預處理設定
 USE_PREPROCESSING = True  # True = 使用預處理，False = 使用原始圖片
@@ -32,9 +32,9 @@ FILTER_CONFIG = {
     # 注意：YOLO 模型層使用最低值，然後在程式層進行類別特定的過濾
     'first_confidence_by_class': {
         # 提高類別特定的信心度門檻，降低低分框殘留
-        'RFID': 0.5,   # (0.81 ok)
-        'cell': 0.5,  # (0.69 ok)
-        'point': 0.4  # (0.69 ok)
+        'RFID': 0.5,  # 0.5
+        'cell': 0.5,  # 0.5
+        'point': 0.4  # 0.4
     },
     # YOLO 模型層使用最低的信心度值
     'yolo_conf_threshold': 0.0001,  # 原 0.001 → 0.05，先在模型層砍掉極低分框
@@ -45,9 +45,9 @@ FILTER_CONFIG = {
     
     # 面積過濾
     'min_area_by_class': {
-        'RFID': 0.001,   # RFID 最小面積比例
-        'cell': 0.001,   # cell 最小面積比例
-        'point': 0.001   # point 最小面積比例（）
+        'RFID': 0.001,   # RFID  最小面積比例
+        'cell': 0.001,   # cell  最小面積比例
+        'point': 0.001   # point 最小面積比例
     },
     'max_area_ratio': 0.99,  # 最大面積比例（相對於圖片大小）
 
@@ -70,19 +70,17 @@ CLASS_MAPPING = {
 # 預處理參數（GIMP 風格，與 train_DB.py 保持一致）
 PREPROCESS_PARAMS = {
     # 顏色轉灰階參數（GIMP 的顏色轉灰階設定）
-    # 注意：GIMP 的顏色轉灰階有 Radius/Samples/Iterations 參數，這是特殊算法
-    # 我們使用 GIMP 亮度方法作為基礎
     'grayscale_radius': 300,        # GIMP Radius = 300
     'grayscale_samples': 4,         # GIMP Samples = 4
     'grayscale_iterations': 10,     # GIMP Iterations = 10
     'grayscale_enhance_shadows': False,  # GIMP Enhance Shadows = 未勾選
     
-    # 銳利化參數（對應 GIMP 的銳利化設定，與 train_DB.py 一致）
+    # 銳利化參數（對應 GIMP 的銳利化設定）
     'sharpen_radius': 3.0,          # 銳化半徑（GIMP Radius = 3.000）
     'sharpen_amount': 5.527,        # 銳化強度（GIMP Amount = 5.527）
     'sharpen_threshold': 0.0,       # 銳化閾值（GIMP Threshold = 0.000）
     
-    # 降低雜訊參數（對應 GIMP 的降低雜訊設定，與 train_DB.py 一致）
+    # 降低雜訊參數（對應 GIMP 的降低雜訊設定）
     'denoise_h': 11.0,              # 過濾強度（GIMP Strength = 11）
     'denoise_templateWindowSize': 7, # 模板窗口大小（必須為奇數，建議 5-9）
     'denoise_searchWindowSize': 21,  # 搜索窗口大小（必須為奇數，建議 15-25）
