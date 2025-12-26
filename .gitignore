@@ -1,0 +1,32 @@
+# 模型文件（太大，不推送到 GitHub）
+*.pt
+runs/**/*.pt
+yolov12*.pt
+
+# 預處理資料夾
+DB預處理/
+預處裡A3/
+預處裡A3_FasterRCNN/
+
+# Python 緩存
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# 虛擬環境
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 系統文件
+.DS_Store
+Thumbs.db
+
