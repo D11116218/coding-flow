@@ -1,5 +1,5 @@
 ﻿#!/usr/bin/env python3
-# YOLOv12x 細胞偵測程式 - 圖片標記
+# YOLOv12 細胞偵測程式 - 圖片標記
 
 import os
 import glob
@@ -19,11 +19,12 @@ PREPROCESSED_FOLDER = '預處理'   # 預處理後的圖片資料夾
 # 圖片副檔名
 IMAGE_EXTENSIONS = ['*.jpg', '*.jpeg', '*.png', '*.JPG', '*.JPEG', '*.PNG']
 
-# 模型路徑
-MODEL_PATH = "runs/DB_cell_detection12/weights/best.pt"
+# YOLO 模型設定
+MODEL_SIZE = 'l'  # 'n' (nano), 's' (small), 'm' (medium), 'l' (large), 'x' (extra large)
+YOLO_MODEL_PATH = f"runs/DB_cell_detection12/weights/best.pt"  # YOLO 訓練好的模型路徑
 
 # 預處理設定
-USE_PREPROCESSING = True  # True = 使用預處理，False = 使用原始圖片
+USE_PREPROCESSING = False  # True = 使用預處理，False = 使用原始圖片
 PREPROCESSED_FOLDER_A3 = '預處裡A3'  # A3 預處理輸出路徑
 
 # 過濾設定
@@ -32,15 +33,15 @@ FILTER_CONFIG = {
     # 注意：YOLO 模型層使用最低值，然後在程式層進行類別特定的過濾
     'first_confidence_by_class': {
         # 降低類別特定的信心度門檻，讓更多檢測結果通過（因模型信心值偏低）
-        'RFID': 0.01,  # 降低到 0.01 以接受更多檢測
-        'cell': 0.23,  # 降低到 0.01 以接受更多檢測
+        'RFID': 0.1,  # 降低到 0.01 以接受更多檢測
+        'cell': 0.01,  # 降低到 0.01 以接受更多檢測
         'point': 0.01  # 降低到 0.01 以接受更多檢測
     },
     # YOLO 模型層使用最低的信心度值
-    'yolo_conf_threshold': 0.02,  # 稍微提高以過濾極低分框，但仍保持較低門檻
+    'yolo_conf_threshold': 0.001,  # 稍微提高以過濾極低分框，但仍保持較低門檻
     # NMS（非極大值抑制）數：過濾重疊的檢測框
     'yolo_iou_threshold': 0.25,   # YOLO 內建 NMS IoU 閾值0.25（越低越積極過濾）
-    'same_class_nms_threshold': 0.15,  # 同類別 NMS IoU 閾值0.15（越低越積極）
+    'same_class_nms_threshold': 0.25,  # 同類別 NMS IoU 閾值0.15（越低越積極）
     'cross_class_iou_threshold': 0.5,  # 跨類別 NMS IoU 閾值0.5（越高越寬鬆）
     
     # 面積過濾
@@ -67,6 +68,13 @@ CLASS_MAPPING = {
     2: 'point'
 }
 
+# 類別順序映射（從類別名稱到索引）
+CLASS_ORDER = {
+    'RFID': 0,
+    'cell': 1,
+    'point': 2
+}
+
 # 預處理參數（GIMP 風格，與 train_DB.py 保持一致）
 PREPROCESS_PARAMS = {
     # 顏色轉灰階參數（GIMP 的顏色轉灰階設定）
@@ -75,7 +83,7 @@ PREPROCESS_PARAMS = {
     'grayscale_iterations': 10,     # GIMP Iterations = 10
     'grayscale_enhance_shadows': False,  # GIMP Enhance Shadows = 未勾選
     
-    # 銳利化參數（對應 GIMP 的銳利化設定）
+    # 銳利化參數（對應 GIMP 的銳利化設定，與 train_DB.py 一致）
     'sharpen_radius': 3.0,          # 銳化半徑（GIMP Radius = 3.000）
     'sharpen_amount': 5.527,        # 銳化強度（GIMP Amount = 5.527）
     'sharpen_threshold': 0.0,       # 銳化閾值（GIMP Threshold = 0.000）
@@ -181,7 +189,7 @@ def preprocess_image(image):
         image: 輸入圖片（BGR 格式）
     
     返回：
-        處理後的灰階圖片（與 train_DB.py 一致）
+        處理後的 BGR 三通道圖片（與 train_DB.py 一致，符合 YOLO 要求）
     """
     # 1. 顏色轉灰階（GIMP 亮度方法）
     gray = convert_to_grayscale_gimp(image)
@@ -202,8 +210,8 @@ def preprocess_image(image):
         PREPROCESS_PARAMS['denoise_searchWindowSize']
     )
     
-    # 與 train_DB.py 一致：返回灰階圖片
-    return denoised
+    # 與 train_DB.py 一致：預處理並輸出三通道以符合 YOLO 要求
+    return cv2.cvtColor(denoised, cv2.COLOR_GRAY2BGR)
 
 # ============================================================================
 # 資料處理函數
@@ -231,7 +239,7 @@ def ensure_folders():
 # 偵測和過濾函數
 # ============================================================================
 
-def detect_objects(model, detection_image, conf_threshold, iou_threshold):
+def detect_objects_yolo(model, detection_image, conf_threshold, iou_threshold):
     """使用 YOLO 模型偵測物體"""
     results = model(
         detection_image, 
@@ -446,6 +454,7 @@ def filter_detections(detections, imgwidth, imgheight):
     class_counts = {'RFID': 0, 'cell': 0, 'point': 0}
     max_area = imgwidth * imgheight * FILTER_CONFIG['max_area_ratio']
     
+    # YOLO 格式
     if detections.boxes is None or len(detections.boxes) == 0:
         return detected_objects, class_counts
     
@@ -573,23 +582,20 @@ def process_image(image_path, model):
     # 預處理（如果需要）
     if USE_PREPROCESSING:
         print(f"  正在預處理圖片...")
-        image_preprocessed = preprocess_image(image_src)
+        detection_image = preprocess_image(image_src)
         
-        # 儲存預處理後的圖片到「預處裡A3」資料夾（灰階）
+        # 儲存預處理後的圖片到「預處裡A3」資料夾（BGR 三通道）
         preprocessed_path_a3 = os.path.join(PREPROCESSED_FOLDER_A3, os.path.basename(image_path))
-        cv2.imwrite(preprocessed_path_a3, image_preprocessed)
-
-        # 與 train_DB 一致：預處理產物為灰階，送入模型前轉為 BGR 三通道
-        detection_image = cv2.cvtColor(image_preprocessed, cv2.COLOR_GRAY2BGR)
+        cv2.imwrite(preprocessed_path_a3, detection_image)
     else:
         detection_image = image_src
     
-    # YOLO 偵測
-    detections, num_boxes = detect_objects(
+    # 使用 YOLO 模型進行偵測
+    detections, num_boxes = detect_objects_yolo(
         model, 
         detection_image, 
         FILTER_CONFIG['yolo_conf_threshold'],
-        FILTER_CONFIG['yolo_iou_threshold']  # 加入 IoU 閾值以過濾重疊框
+        FILTER_CONFIG['yolo_iou_threshold']
     )
     print_detection_info(detections, num_boxes)
     
@@ -676,7 +682,8 @@ def process_image(image_path, model):
 def main():
     """主程式流程"""
     print("=" * 60)
-    print("YOLOv12x 細胞偵測 - 圖片標記")
+    model_size_name = {'n': 'nano', 's': 'small', 'm': 'medium', 'l': 'large', 'x': 'extra large'}.get(MODEL_SIZE, 'extra large')
+    print(f"YOLOv12{MODEL_SIZE.upper()} ({model_size_name}) 細胞偵測 - 圖片標記")
     print("=" * 60)
     
     # 確保資料夾存在
@@ -693,13 +700,14 @@ def main():
     print(f"找到 {len(image_paths)} 張圖片，開始處理...")
     print("=" * 60)
     
-    # 載入模型
-    print("正在載入 YOLOv12x 模型...")
+    # 載入 YOLO 模型
+    model_size_name = {'n': 'nano', 's': 'small', 'm': 'medium', 'l': 'large', 'x': 'extra large'}.get(MODEL_SIZE, 'extra large')
+    print(f"正在載入 YOLOv12{MODEL_SIZE.upper()} ({model_size_name}) 模型...")
     try:
-        model = YOLO(MODEL_PATH)
-        print(f"模型載入成功: {MODEL_PATH}")
+        model = YOLO(YOLO_MODEL_PATH)
+        print(f"模型載入成功: {YOLO_MODEL_PATH}")
     except Exception as e:
-        print(f"錯誤：無法載入模型 {MODEL_PATH}")
+        print(f"錯誤：無法載入模型 {YOLO_MODEL_PATH}")
         print(f"錯誤訊息: {e}")
         return
     

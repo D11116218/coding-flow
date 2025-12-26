@@ -1,6 +1,6 @@
 task: detect
 mode: train
-model: yolov12x.pt
+model: yolov12l.pt
 data: DB預處理_dataset.yaml
 epochs: 500
 time: null

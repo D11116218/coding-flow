@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-下載 YOLOv12 模型（支援 m 和 x 版本）
+下載 YOLOv12 模型（支援 n, s, m, l, x 版本）
 使用 GitHub releases 作為下載來源
 """
 
@@ -85,8 +85,8 @@ if __name__ == "__main__":
     print("\n下載來源：GitHub releases")
     print("  https://github.com/sunsmarterjie/yolov12/releases")
     
-    # 下載兩個模型
-    models_to_download = ['yolov12m', 'yolov12x']
+    # 下載模型
+    models_to_download = ['yolov12l']
     
     success_count = 0
     for model_name in models_to_download:
@@ -100,8 +100,7 @@ if __name__ == "__main__":
     if success_count == len(models_to_download):
         print("\n✓ 所有模型下載成功！")
         print("\n現在您可以在 train_DB.py 和 A3.py 中使用這些模型：")
-        print("  - yolov12m.pt (Medium, ~40 MB)")
-        print("  - yolov12x.pt (Extra Large, ~114 MB)")
+        print("  - yolov12l.pt (Large, ~52 MB)")
     else:
         print(f"\n⚠ 有 {len(models_to_download) - success_count} 個模型下載失敗")
         sys.exit(1)

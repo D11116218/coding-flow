@@ -1,5 +1,5 @@
 ﻿#!/usr/bin/env python3
-# YOLOv12x 細胞偵測模型訓練程式 - DB 訓練集
+# YOLOv12l 細胞偵測模型訓練程式 - DB 訓練集
 
 import os
 import shutil
@@ -45,7 +45,7 @@ class DatasetConfig:
 
 class TrainConfig:
     """訓練配置"""
-    BASE_MODEL = 'yolov12x.pt'
+    BASE_MODEL = 'yolov12l.pt'
     EPOCHS = 500
     IMGSZ = 640
     BATCH = 16
@@ -581,7 +581,7 @@ def load_model():
 def main():
     """主程式流程"""
     print("=" * 60)
-    print("YOLOv12x 細胞偵測模型訓練 - DB 訓練集")
+    print("YOLOv12l 細胞偵測模型訓練 - DB 訓練集")
     print("=" * 60)
     
     # 1. 檢查資料集
