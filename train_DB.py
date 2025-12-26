@@ -8,6 +8,9 @@ import numpy as np
 import glob
 from ultralytics import YOLO
 
+# 設置 PyTorch CUDA 記憶體分配優化（避免記憶體碎片化）
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+
 # ============================================================================
 # 配置類別
 # ============================================================================
@@ -45,13 +48,54 @@ class DatasetConfig:
 
 class TrainConfig:
     """訓練配置"""
-    BASE_MODEL = 'yolov12l.pt'
+    # 模型大小選擇：'s' (Small), 'm' (Medium), 'l' (Large)
+    MODEL_SIZE = 'l'  # 可選擇 's', 'm', 'l'
+    
     EPOCHS = 500
-    IMGSZ = 640
-    BATCH = 16
+    IMGSZ = 1024  # 提高解析度有助於精確定位 RFID 邊緣（從 640 提升至 1024）
+    BATCH = 2  # 降低 batch size 以避免 CUDA 記憶體不足（從 4 降到 2，因為 IMGSZ 提升到 1024）
+    WORKERS = 1  # 數據加載線程數，降低可減少記憶體使用（從 2 降到 1）
     NAME = 'DB_cell_detection12'  # 每次訓練直接覆蓋此資料夾
     PROJECT = 'runs'  # 模型儲存路徑（會儲存在 runs/detect/ 下）
     PATIENCE = 20
+    AMP = True  # 啟用混合精度訓練（Automatic Mixed Precision）以節省記憶體
+    
+    @classmethod
+    def get_base_model(cls):
+        """根據 MODEL_SIZE 返回對應的預訓練模型路徑"""
+        model_map = {
+            's': 'yolov12s.pt',
+            'm': 'yolov12m.pt',
+            'l': 'yolov12l.pt'
+        }
+        return model_map.get(cls.MODEL_SIZE.lower(), 'yolov12l.pt')
+    
+    @classmethod
+    def get_batch_size(cls):
+        """根據模型大小和 IMGSZ 動態調整 batch size"""
+        # 基礎 batch size（根據模型大小）
+        base_batch = {
+            's': 8,  # Small 模型可以使用較大的 batch size
+            'm': 4,  # Medium 模型使用中等 batch size
+            'l': 2   # Large 模型使用較小的 batch size
+        }
+        batch = base_batch.get(cls.MODEL_SIZE.lower(), 2)
+        
+        # 如果 IMGSZ 很大，進一步降低 batch size
+        if cls.IMGSZ >= 1024:
+            batch = max(1, batch // 2)  # 至少為 1
+        
+        return batch
+    
+    @classmethod
+    def get_model_size_name(cls):
+        """獲取模型大小的完整名稱"""
+        size_map = {
+            's': 'Small',
+            'm': 'Medium',
+            'l': 'Large'
+        }
+        return size_map.get(cls.MODEL_SIZE.lower(), 'Large')
     
     @classmethod
     def get_augmentation_params(cls):
@@ -84,7 +128,7 @@ PREPROCESS_PARAMS = {
     
     # 銳利化參數（對應 GIMP 的銳利化設定，與 A3.py 一致）
     'sharpen_radius': 3.0,          # 銳化半徑（GIMP Radius = 3.000）
-    'sharpen_amount': 5.527,        # 銳化強度（GIMP Amount = 5.527）
+    'sharpen_amount': 2.5,          # 銳化強度（降低銳化，從 5.527 降到 2.5）
     'sharpen_threshold': 0.0,       # 銳化閾值（GIMP Threshold = 0.000）
     
     # 降低雜訊參數（對應 GIMP 的降低雜訊設定，與 A3.py 一致）
@@ -315,10 +359,13 @@ def copy_files(source_dir, dest_dir, file_list):
 def print_train_config():
     """顯示訓練與資料增強設定"""
     print("\n訓練設定:")
-    print(f"  base_model: {TrainConfig.BASE_MODEL}")
+    print(f"  模型大小: {TrainConfig.MODEL_SIZE.upper()} ({TrainConfig.get_model_size_name()})")
+    print(f"  base_model: {TrainConfig.get_base_model()}")
     print(f"  epochs: {TrainConfig.EPOCHS}")
     print(f"  imgsz: {TrainConfig.IMGSZ}")
-    print(f"  batch: {TrainConfig.BATCH}")
+    print(f"  batch: {TrainConfig.get_batch_size()} (根據模型大小和 IMGSZ 自動調整)")
+    print(f"  workers: {TrainConfig.WORKERS}")
+    print(f"  amp: {TrainConfig.AMP} (混合精度訓練，節省記憶體)")
     print(f"  name: {TrainConfig.NAME}")
     print(f"  project: {TrainConfig.PROJECT}")
     print(f"  patience: {TrainConfig.PATIENCE}")
@@ -359,6 +406,15 @@ def train_model(model, data_yaml):
     print("\n開始訓練...")
     print("-" * 60)
     
+    # 清理 GPU 記憶體（如果可用）
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            print("  已清理 GPU 記憶體快取")
+    except ImportError:
+        pass
+    
     # 刪除舊的訓練結果資料夾以確保覆蓋
     output_dir = os.path.join(TrainConfig.PROJECT, 'detect', TrainConfig.NAME)
     if os.path.exists(output_dir):
@@ -370,14 +426,20 @@ def train_model(model, data_yaml):
         # 過濾掉值為 0 的參數（停用的擴增項目）
         augmentation_params = {k: v for k, v in augmentation_params.items() if v != 0}
         
+        # 使用動態調整的 batch size
+        batch_size = TrainConfig.get_batch_size()
+        print(f"  使用 batch size: {batch_size} (根據模型大小 {TrainConfig.MODEL_SIZE.upper()} 和 IMGSZ {TrainConfig.IMGSZ} 自動調整)")
+        
         results = model.train(
             data=data_yaml,
             epochs=TrainConfig.EPOCHS,
             imgsz=TrainConfig.IMGSZ,
-            batch=TrainConfig.BATCH,
+            batch=batch_size,
+            workers=TrainConfig.WORKERS,
             name=TrainConfig.NAME,
             project=TrainConfig.PROJECT,
             patience=TrainConfig.PATIENCE,
+            amp=TrainConfig.AMP,  # 啟用混合精度訓練以節省記憶體
             save=True,
             plots=True,
             **augmentation_params
@@ -564,13 +626,24 @@ def print_statistics(stats):
 
 def load_model():
     """載入預訓練模型"""
-    print("\n正在載入預訓練模型...")
+    base_model = TrainConfig.get_base_model()
+    model_size_name = TrainConfig.get_model_size_name()
+    print(f"\n正在載入預訓練模型: {base_model} ({model_size_name})...")
     try:
-        model = YOLO(TrainConfig.BASE_MODEL)
-        print("模型載入成功！")
+        # 清理 GPU 記憶體（如果可用）
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                print("  已清理 GPU 記憶體快取")
+        except ImportError:
+            pass
+        
+        model = YOLO(base_model)
+        print(f"模型載入成功！({model_size_name})")
         return model
     except Exception as e:
-        print(f"錯誤：無法載入模型: {e}")
+        print(f"錯誤：無法載入模型 {base_model}: {e}")
         return None
 
 
@@ -580,8 +653,10 @@ def load_model():
 
 def main():
     """主程式流程"""
+    model_size = TrainConfig.MODEL_SIZE.upper()
+    model_size_name = TrainConfig.get_model_size_name()
     print("=" * 60)
-    print("YOLOv12l 細胞偵測模型訓練 - DB 訓練集")
+    print(f"YOLOv12{model_size} ({model_size_name}) 細胞偵測模型訓練 - DB 訓練集")
     print("=" * 60)
     
     # 1. 檢查資料集
@@ -600,13 +675,16 @@ def main():
     # 4. 顯示訓練設定
     print_train_config()
     
-    # 5. 複製已經預處理過的圖片和標籤到 DB預處理 資料夾
+    # 5. 複製圖片和標籤到 DB預處理 資料夾
     copy_images_to_preprocessed_folder()
     
-    # 6. 創建預處理資料集設定檔
+    # 6. 對 DB預處理 資料夾中的圖片進行預處理
+    preprocess_images_in_folder()
+    
+    # 7. 創建預處理資料集設定檔
     create_preprocessed_yaml()
     
-    # 7. 訓練模型
+    # 8. 訓練模型
     results = train_model(model, DatasetConfig.PREPROCESSED_YAML)
     
     if results is None:

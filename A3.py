@@ -24,7 +24,7 @@ MODEL_SIZE = 'l'  # 'n' (nano), 's' (small), 'm' (medium), 'l' (large), 'x' (ext
 YOLO_MODEL_PATH = f"runs/DB_cell_detection12/weights/best.pt"  # YOLO 訓練好的模型路徑
 
 # 預處理設定
-USE_PREPROCESSING = False  # True = 使用預處理，False = 使用原始圖片
+USE_PREPROCESSING = True  # True = 使用預處理（與訓練時一致），False = 使用原始圖片
 PREPROCESSED_FOLDER_A3 = '預處裡A3'  # A3 預處理輸出路徑
 
 # 過濾設定
@@ -33,16 +33,17 @@ FILTER_CONFIG = {
     # 注意：YOLO 模型層使用最低值，然後在程式層進行類別特定的過濾
     'first_confidence_by_class': {
         # 降低類別特定的信心度門檻，讓更多檢測結果通過（因模型信心值偏低）
-        'RFID': 0.1,  # 降低到 0.01 以接受更多檢測
-        'cell': 0.01,  # 降低到 0.01 以接受更多檢測
-        'point': 0.01  # 降低到 0.01 以接受更多檢測
+        'RFID': 0.5,   # 0.01 
+        'cell': 0.05,  # 0.01 
+        'point': 0.05  # 0.01 
     },
     # YOLO 模型層使用最低的信心度值
-    'yolo_conf_threshold': 0.001,  # 稍微提高以過濾極低分框，但仍保持較低門檻
+    'yolo_conf_threshold': 0.001,  # 提高以過濾極低分框，但仍保持較低門檻
     # NMS（非極大值抑制）數：過濾重疊的檢測框
-    'yolo_iou_threshold': 0.25,   # YOLO 內建 NMS IoU 閾值0.25（越低越積極過濾）
-    'same_class_nms_threshold': 0.25,  # 同類別 NMS IoU 閾值0.15（越低越積極）
-    'cross_class_iou_threshold': 0.5,  # 跨類別 NMS IoU 閾值0.5（越高越寬鬆）
+    'yolo_iou_threshold': 0.15,   # YOLO 內建 NMS IoU 閾值   (越高越積極過濾）
+    'same_class_nms_threshold': 0.15,  # 同類別 NMS IoU 閾值（越高越積極過濾）
+    'cross_class_iou_threshold': 0.3,  # 跨類別 NMS IoU 閾值（越高越積極過濾）
+    'rfid_same_class_nms_threshold': 0.1,  # RFID 專用同類別 NMS 閾值（越高越積極過濾）
     
     # 面積過濾
     'min_area_by_class': {
@@ -77,21 +78,21 @@ CLASS_ORDER = {
 
 # 預處理參數（GIMP 風格，與 train_DB.py 保持一致）
 PREPROCESS_PARAMS = {
-    # 顏色轉灰階參數（GIMP 的顏色轉灰階設定）
+    # 顏色轉灰階參數
     'grayscale_radius': 300,        # GIMP Radius = 300
     'grayscale_samples': 4,         # GIMP Samples = 4
     'grayscale_iterations': 10,     # GIMP Iterations = 10
     'grayscale_enhance_shadows': False,  # GIMP Enhance Shadows = 未勾選
     
-    # 銳利化參數（對應 GIMP 的銳利化設定，與 train_DB.py 一致）
-    'sharpen_radius': 3.0,          # 銳化半徑（GIMP Radius = 3.000）
-    'sharpen_amount': 5.527,        # 銳化強度（GIMP Amount = 5.527）
-    'sharpen_threshold': 0.0,       # 銳化閾值（GIMP Threshold = 0.000）
+    # 銳利化參數
+    'sharpen_radius': 3.0,          # 銳化半徑
+    'sharpen_amount': 2.5,          # 銳化強度
+    'sharpen_threshold': 0.0,       # 銳化閾值
     
-    # 降低雜訊參數（對應 GIMP 的降低雜訊設定）
-    'denoise_h': 11.0,              # 過濾強度（GIMP Strength = 11）
-    'denoise_templateWindowSize': 7, # 模板窗口大小（必須為奇數，建議 5-9）
-    'denoise_searchWindowSize': 21,  # 搜索窗口大小（必須為奇數，建議 15-25）
+    # 降低雜訊參數
+    'denoise_h': 11.0,              # 過濾強度
+    'denoise_templateWindowSize': 7, # 模板窗口大小
+    'denoise_searchWindowSize': 21,  # 搜索窗口大小
 }
 
 # ============================================================================
@@ -145,7 +146,7 @@ def sharpen_image_unsharp_mask(image, radius, amount, threshold=0.0):
     diff = img_float - blurred
     sharpened = img_float + diff * amount
     
-    # 應用閾值（如果設定）
+    # 應用閾值 
     if threshold > 0:
         # 計算差異的絕對值
         diff_abs = np.abs(diff)
@@ -591,6 +592,7 @@ def process_image(image_path, model):
         detection_image = image_src
     
     # 使用 YOLO 模型進行偵測
+    # 對於 RFID，使用更低的 NMS 閾值以保留更多候選框
     detections, num_boxes = detect_objects_yolo(
         model, 
         detection_image, 
@@ -599,9 +601,33 @@ def process_image(image_path, model):
     )
     print_detection_info(detections, num_boxes)
     
+    # 診斷：顯示所有原始 RFID 偵測結果（在過濾前）
+    if detections.boxes is not None and len(detections.boxes) > 0:
+        rfid_raw = []
+        for box in detections.boxes:
+            cls_id = int(box.cls[0].cpu().numpy()) if box.cls is not None else 0
+            if cls_id == 0:  # RFID 的 class_id 是 0
+                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                conf = float(box.conf[0].cpu().numpy())
+                rfid_raw.append({
+                    'x1': int(x1), 'y1': int(y1), 'x2': int(x2), 'y2': int(y2),
+                    'confidence': conf
+                })
+        if len(rfid_raw) > 0:
+            print(f"  🔍 原始 RFID 偵測結果（YOLO 輸出，共 {len(rfid_raw)} 個）:")
+            for i, rfid in enumerate(rfid_raw):
+                print(f"    [{i+1}] conf={rfid['confidence']:.3f}, pos=({rfid['x1']},{rfid['y1']}), size=({rfid['x2']-rfid['x1']})x({rfid['y2']-rfid['y1']})")
+    
     # 過濾偵測結果
     detected_objects, class_counts = filter_detections(detections, imgwidth, imgheight)
     print(f"  程式層過濾後 - RFID: {class_counts['RFID']}, cell: {class_counts['cell']}, point: {class_counts['point']}")
+    
+    # 診斷：顯示過濾後的 RFID 候選框
+    rfid_after_filter = [obj for obj in detected_objects if obj['class'] == 'RFID']
+    if len(rfid_after_filter) > 0:
+        print(f"  🔍 過濾後的 RFID 候選框（共 {len(rfid_after_filter)} 個）:")
+        for i, rfid in enumerate(rfid_after_filter):
+            print(f"    [{i+1}] conf={rfid['confidence']:.3f}, pos=({rfid['x1']},{rfid['y1']}), size={rfid['w']}x{rfid['h']}")
     
     # 診斷：檢查 cell 框之間的重疊情況
     cell_objects = [obj for obj in detected_objects if obj['class'] == 'cell']
@@ -613,12 +639,23 @@ def process_image(image_path, model):
                 if iou > 0.3:  # 顯示 IoU > 0.3 的重疊
                     print(f"    cell {i+1} (conf={obj1['confidence']:.2f}) 與 cell {j+1} (conf={obj2['confidence']:.2f}) IoU={iou:.3f}")
     
-    # 程式層同類別 NMS：針對同類別內的重疊框再做一次過濾（YOLO 內建 NMS 可能不夠）
+    # 程式層同類別 NMS：針對同類別內的重疊框再做一次過濾
+    # 對 RFID 使用更寬鬆的 NMS 閾值，保留更多候選框
     before_same_nms = len(detected_objects)
-    detected_objects = apply_same_class_nms(detected_objects, FILTER_CONFIG['same_class_nms_threshold'])
+    
+    # 分開處理 RFID 和其他類別
+    rfid_objects_before_nms = [obj for obj in detected_objects if obj['class'] == 'RFID']
+    other_objects_before_nms = [obj for obj in detected_objects if obj['class'] != 'RFID']
+    
+    # RFID 使用更寬鬆的 NMS
+    rfid_after_nms = apply_same_class_nms(rfid_objects_before_nms, FILTER_CONFIG['rfid_same_class_nms_threshold'])
+    # 其他類別使用標準 NMS
+    other_after_nms = apply_same_class_nms(other_objects_before_nms, FILTER_CONFIG['same_class_nms_threshold'])
+    
+    detected_objects = rfid_after_nms + other_after_nms
     after_same_nms = len(detected_objects)
     if before_same_nms != after_same_nms:
-        print(f"  同類別 NMS 過濾掉 {before_same_nms - after_same_nms} 個重疊框")
+        print(f"  同類別 NMS 過濾掉 {before_same_nms - after_same_nms} 個重疊框 (RFID: {len(rfid_objects_before_nms)} -> {len(rfid_after_nms)})")
     
     # 應用跨類別 NMS，過濾不同類別之間重疊的框（如 cell 和 point）
     before_cross_nms_count = len(detected_objects)
@@ -630,17 +667,91 @@ def process_image(image_path, model):
     if before_cross_nms_count != after_cross_nms_count:
         print(f"  跨類別 NMS 過濾掉 {before_cross_nms_count - after_cross_nms_count} 個框")
     
-    # 針對 RFID 只保留信心值最高的一個
+    # 針對 RFID 選擇最佳的一個（考慮信心度和位置）
     rfid_objects = [obj for obj in detected_objects if obj['class'] == 'RFID']
     other_objects = [obj for obj in detected_objects if obj['class'] != 'RFID']
     
     if len(rfid_objects) > 1:
-        # 按信心度降序排序，只保留第一個（信心度最高的）
-        rfid_objects.sort(key=lambda x: x['confidence'], reverse=True)
+        # RFID 選擇策略：綜合考慮信心度、位置和大小
+        # 優先選擇：信心度高 + 位置合理（靠近邊緣或中心區域）+ 長寬比合理
+        def rfid_score(obj):
+            """計算 RFID 的綜合分數"""
+            conf_score = obj['confidence']  # 信心度權重
+            
+            # 位置分數：RFID 通常在圖片邊緣或特定位置
+            # 計算距離圖片邊緣的距離（越小越好）
+            edge_dist = min(
+                obj['x1'], obj['y1'], 
+                imgwidth - obj['x2'], 
+                imgheight - obj['y2']
+            )
+            # 標準化到 0-1（假設圖片邊緣 10% 區域是 RFID 常見位置）
+            edge_score = max(0, 1 - edge_dist / (min(imgwidth, imgheight) * 0.1))
+            
+            # 長寬比分數：RFID 通常是矩形，長寬比約 2:1 到 4:1
+            aspect_ratio = max(obj['w'], obj['h']) / max(min(obj['w'], obj['h']), 1)
+            aspect_score = 1.0 if 1.5 <= aspect_ratio <= 5.0 else max(0, 1 - abs(aspect_ratio - 3) / 3)
+            
+            # 綜合分數：信心度 70%，位置 20%，長寬比 10%
+            return conf_score * 0.7 + edge_score * 0.2 + aspect_score * 0.1
+        
+        # 按綜合分數排序
+        rfid_objects.sort(key=rfid_score, reverse=True)
         kept_rfid = rfid_objects[0]
         removed_count = len(rfid_objects) - 1
-        print(f"  RFID 過濾：從 {len(rfid_objects)} 個中只保留信心值最高的一個 (conf={kept_rfid['confidence']:.4f})，移除 {removed_count} 個")
+        
+        # 顯示所有候選 RFID 的資訊
+        print(f"  RFID 候選框 ({len(rfid_objects)} 個):")
+        for i, rfid in enumerate(rfid_objects[:3]):  # 只顯示前 3 個
+            score = rfid_score(rfid)
+            print(f"    [{i+1}] conf={rfid['confidence']:.3f}, pos=({rfid['x1']},{rfid['y1']}), size={rfid['w']}x{rfid['h']}, score={score:.3f}")
+        
+        print(f"  RFID 選擇：保留分數最高的 (conf={kept_rfid['confidence']:.4f}, pos=({kept_rfid['x1']},{kept_rfid['y1']}))，移除 {removed_count} 個")
         detected_objects = [kept_rfid] + other_objects
+    elif len(rfid_objects) == 1:
+        # 只有一個 RFID，檢查是否需要位置修正
+        rfid = rfid_objects[0]
+        center_x, center_y = imgwidth // 2, imgheight // 2
+        rfid_center_x, rfid_center_y = rfid['cx'], rfid['cy']
+        dist_from_center = ((rfid_center_x - center_x)**2 + (rfid_center_y - center_y)**2)**0.5
+        max_dist = ((imgwidth/2)**2 + (imgheight/2)**2)**0.5
+        
+        # 檢查原始 YOLO 偵測結果中是否有其他 RFID 候選框被過濾掉了
+        # 如果當前 RFID 位置不合理，嘗試從原始結果中尋找更好的候選框
+        if dist_from_center / max_dist < 0.3:  # 如果 RFID 太靠近中心
+            print(f"  ⚠️  RFID 位置警告：RFID 位於圖片中心附近 (距離中心 {dist_from_center/max_dist*100:.1f}%)")
+            print(f"  🔍 嘗試從原始 YOLO 結果中尋找其他 RFID 候選框...")
+            
+            # 從原始 detections 中尋找所有 RFID（即使信心度較低）
+            alternative_rfids = []
+            if detections.boxes is not None:
+                for box in detections.boxes:
+                    cls_id = int(box.cls[0].cpu().numpy()) if box.cls is not None else 0
+                    if cls_id == 0:  # RFID
+                        conf = float(box.conf[0].cpu().numpy())
+                        x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                        x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+                        
+                        # 計算位置分數（距離邊緣越近越好）
+                        edge_dist = min(x1, y1, imgwidth - x2, imgheight - y2)
+                        edge_score = max(0, 1 - edge_dist / (min(imgwidth, imgheight) * 0.1))
+                        
+                        # 如果這個候選框位置更好（更靠近邊緣），且信心度 > 0.3
+                        if edge_score > 0.5 and conf > 0.3:
+                            alt_rfid = parse_detection_box(box, detections, imgwidth, imgheight)
+                            alt_rfid = validate_and_clip_coordinates(alt_rfid, imgwidth, imgheight)
+                            alternative_rfids.append((alt_rfid, conf, edge_score))
+            
+            if len(alternative_rfids) > 0:
+                # 按位置分數排序，選擇位置最好的
+                alternative_rfids.sort(key=lambda x: x[2], reverse=True)
+                best_alt = alternative_rfids[0][0]
+                print(f"  ✓ 找到更好的 RFID 候選框：conf={alternative_rfids[0][1]:.3f}, pos=({best_alt['x1']},{best_alt['y1']}), edge_score={alternative_rfids[0][2]:.3f}")
+                rfid_objects = [best_alt]
+            else:
+                print(f"  ℹ️  未找到更好的 RFID 候選框，使用當前偵測結果")
+        
+        detected_objects = rfid_objects + other_objects
     else:
         detected_objects = rfid_objects + other_objects
     
