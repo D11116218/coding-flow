@@ -1,5 +1,5 @@
 ﻿#!/usr/bin/env python3
-# YOLOv12n 細胞偵測模型訓練程式 - DB 訓練集
+# YOLOv12x 細胞偵測模型訓練程式 - DB 訓練集
 
 import os
 import shutil
@@ -45,11 +45,11 @@ class DatasetConfig:
 
 class TrainConfig:
     """訓練配置"""
-    BASE_MODEL = 'yolov12n.pt'
+    BASE_MODEL = 'yolov12x.pt'
     EPOCHS = 500
     IMGSZ = 640
     BATCH = 16
-    NAME = 'DB_cell_detection1'
+    NAME = 'DB_cell_detection12'  # 每次訓練直接覆蓋此資料夾
     PROJECT = 'runs'  # 模型儲存路徑（會儲存在 runs/detect/ 下）
     PATIENCE = 20
     
@@ -359,6 +359,12 @@ def train_model(model, data_yaml):
     print("\n開始訓練...")
     print("-" * 60)
     
+    # 刪除舊的訓練結果資料夾以確保覆蓋
+    output_dir = os.path.join(TrainConfig.PROJECT, 'detect', TrainConfig.NAME)
+    if os.path.exists(output_dir):
+        print(f"刪除舊的訓練結果資料夾: {output_dir}")
+        shutil.rmtree(output_dir)
+    
     try:
         augmentation_params = TrainConfig.get_augmentation_params()
         # 過濾掉值為 0 的參數（停用的擴增項目）
@@ -575,7 +581,7 @@ def load_model():
 def main():
     """主程式流程"""
     print("=" * 60)
-    print("YOLOv12n 細胞偵測模型訓練 - DB 訓練集")
+    print("YOLOv12x 細胞偵測模型訓練 - DB 訓練集")
     print("=" * 60)
     
     # 1. 檢查資料集

@@ -1,5 +1,5 @@
 ﻿#!/usr/bin/env python3
-# YOLOv12n 細胞偵測程式 - 圖片標記
+# YOLOv12x 細胞偵測程式 - 圖片標記
 
 import os
 import glob
@@ -31,16 +31,16 @@ FILTER_CONFIG = {
     # 信心度過濾（程式層，類別特定）
     # 注意：YOLO 模型層使用最低值，然後在程式層進行類別特定的過濾
     'first_confidence_by_class': {
-        # 提高類別特定的信心度門檻，降低低分框殘留
-        'RFID': 0.5,  # 0.5
-        'cell': 0.5,  # 0.5
-        'point': 0.4  # 0.4
+        # 降低類別特定的信心度門檻，讓更多檢測結果通過（因模型信心值偏低）
+        'RFID': 0.01,  # 降低到 0.01 以接受更多檢測
+        'cell': 0.23,  # 降低到 0.01 以接受更多檢測
+        'point': 0.01  # 降低到 0.01 以接受更多檢測
     },
     # YOLO 模型層使用最低的信心度值
-    'yolo_conf_threshold': 0.0001,  # 原 0.001 → 0.05，先在模型層砍掉極低分框
+    'yolo_conf_threshold': 0.02,  # 稍微提高以過濾極低分框，但仍保持較低門檻
     # NMS（非極大值抑制）數：過濾重疊的檢測框
-    'yolo_iou_threshold': 0.2,   # YOLO 內建 NMS IoU 閾值0.25（越低越積極過濾）
-    'same_class_nms_threshold': 0.05,  # 同類別 NMS IoU 閾值0.15（越低越積極）
+    'yolo_iou_threshold': 0.25,   # YOLO 內建 NMS IoU 閾值0.25（越低越積極過濾）
+    'same_class_nms_threshold': 0.15,  # 同類別 NMS IoU 閾值0.15（越低越積極）
     'cross_class_iou_threshold': 0.5,  # 跨類別 NMS IoU 閾值0.5（越高越寬鬆）
     
     # 面積過濾
@@ -342,6 +342,22 @@ def calculate_iou(box1, box2):
     
     return inter_area / union_area
 
+def is_box_inside(inner_box, outer_box):
+    """
+    檢查 inner_box 是否完全在 outer_box 內
+    
+    參數：
+        inner_box: 內部框（字典，包含 x1, y1, x2, y2）
+        outer_box: 外部框（字典，包含 x1, y1, x2, y2）
+    
+    返回：
+        True 如果 inner_box 完全在 outer_box 內，否則 False
+    """
+    return (inner_box['x1'] >= outer_box['x1'] and 
+            inner_box['y1'] >= outer_box['y1'] and 
+            inner_box['x2'] <= outer_box['x2'] and 
+            inner_box['y2'] <= outer_box['y2'])
+
 def apply_same_class_nms(detected_objects, iou_threshold):
     """同類別 NMS：過濾同一類別內重疊的框，保留信心度最高的"""
     if len(detected_objects) <= 1:
@@ -438,12 +454,12 @@ def filter_detections(detections, imgwidth, imgheight):
         class_name = obj['class']
         
         # 獲取過濾條件
-        min_area = FILTER_CONFIG['min_area_by_class'].get(class_name, 20)
-        confidence = FILTER_CONFIG['first_confidence_by_class'].get(class_name, 0.01)  # 信心度過濾
+        min_area = imgwidth * imgheight * FILTER_CONFIG['min_area_by_class'].get(class_name, 0.001)
+        confidence = FILTER_CONFIG['first_confidence_by_class'].get(class_name, 0.01)
         
         # 驗證條件
         area_ok = min_area <= obj['area'] <= max_area
-        conf_ok = obj['confidence'] >= confidence  # 信心度過濾
+        conf_ok = obj['confidence'] >= confidence
         coord_ok = (obj['x1'] >= 0 and obj['y1'] >= 0 and 
                    obj['x2'] > obj['x1'] and obj['y2'] > obj['y1'] and
                    obj['x2'] <= imgwidth and obj['y2'] <= imgheight and
@@ -622,6 +638,19 @@ def process_image(image_path, model):
     else:
         detected_objects = rfid_objects + other_objects
     
+    # 過濾：移除 RFID 框內的 cell 和 point
+    if len(rfid_objects) > 0:
+        rfid_box = rfid_objects[0]  # 使用保留的 RFID 框
+        before_rfid_filter = len(detected_objects)
+        detected_objects = [
+            obj for obj in detected_objects 
+            if obj['class'] == 'RFID' or not is_box_inside(obj, rfid_box)
+        ]
+        after_rfid_filter = len(detected_objects)
+        removed_count = before_rfid_filter - after_rfid_filter
+        if removed_count > 0:
+            print(f"  RFID 框內過濾：移除 {removed_count} 個在 RFID 框內的 cell/point 標記")
+    
     # 重新計算類別計數
     class_counts = {'RFID': 0, 'cell': 0, 'point': 0}
     for obj in detected_objects:
@@ -647,7 +676,7 @@ def process_image(image_path, model):
 def main():
     """主程式流程"""
     print("=" * 60)
-    print("YOLOv12n 細胞偵測 - 圖片標記")
+    print("YOLOv12x 細胞偵測 - 圖片標記")
     print("=" * 60)
     
     # 確保資料夾存在
@@ -665,7 +694,7 @@ def main():
     print("=" * 60)
     
     # 載入模型
-    print("正在載入 YOLOv12n 模型...")
+    print("正在載入 YOLOv12x 模型...")
     try:
         model = YOLO(MODEL_PATH)
         print(f"模型載入成功: {MODEL_PATH}")
