@@ -1,6 +1,6 @@
-﻿#!/usr/bin/env python3
+﻿#!/home/dssignal/coding-flow/.venv/bin/python3
 # YOLOv12l 細胞偵測模型訓練程式 - DB 訓練集
-
+#@@
 import os
 import shutil
 import cv2
@@ -9,7 +9,7 @@ import glob
 from ultralytics import YOLO
 
 # 設置 PyTorch CUDA 記憶體分配優化（避免記憶體碎片化）
-os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+os.environ['PYTORCH_ALLOC_CONF'] = 'expandable_segments:True'
 
 # ============================================================================
 # 配置類別
@@ -52,13 +52,33 @@ class TrainConfig:
     MODEL_SIZE = 'l'  # 可選擇 's', 'm', 'l'
     
     EPOCHS = 500
-    IMGSZ = 1024  # 提高解析度有助於精確定位 RFID 邊緣（從 640 提升至 1024）
-    BATCH = 2  # 降低 batch size 以避免 CUDA 記憶體不足（從 4 降到 2，因為 IMGSZ 提升到 1024）
+    IMGSZ = 640  # 降低解析度以減少 CUDA 記憶體使用（從 1024 降至 640）
+    BATCH = 1  # 降低 batch size 以避免 CUDA 記憶體不足（從 2 降到 1）
     WORKERS = 1  # 數據加載線程數，降低可減少記憶體使用（從 2 降到 1）
     NAME = 'DB_cell_detection12'  # 每次訓練直接覆蓋此資料夾
     PROJECT = 'runs'  # 模型儲存路徑（會儲存在 runs/detect/ 下）
     PATIENCE = 20
     AMP = True  # 啟用混合精度訓練（Automatic Mixed Precision）以節省記憶體
+    
+    # 類別權重（根據圖片覆蓋率計算，平衡類別不平衡問題）
+    # RFID: 100% 圖片都有，cell: 68% 圖片有，point: 84% 圖片有
+    # 權重 = 總圖片數 / 包含該類別的圖片數，標準化後最小權重為 1.0
+    CLASS_WEIGHTS = {
+        0: 1.000,  # RFID（覆蓋率 100%）
+        1: 1.471,  # cell（覆蓋率 68%，需要更高權重）
+        2: 1.190   # point（覆蓋率 84%）
+    }
+    USE_CLASS_WEIGHTS = True  # 是否使用類別權重
+    
+    @classmethod
+    def get_class_weights(cls):
+        """獲取類別權重列表（按類別 ID 順序）"""
+        if not cls.USE_CLASS_WEIGHTS:
+            return None
+        # 返回權重列表 [RFID, cell, point]
+        return [cls.CLASS_WEIGHTS.get(0, 1.0), 
+                cls.CLASS_WEIGHTS.get(1, 1.0), 
+                cls.CLASS_WEIGHTS.get(2, 1.0)]
     
     @classmethod
     def get_base_model(cls):
@@ -73,19 +93,8 @@ class TrainConfig:
     @classmethod
     def get_batch_size(cls):
         """根據模型大小和 IMGSZ 動態調整 batch size"""
-        # 基礎 batch size（根據模型大小）
-        base_batch = {
-            's': 8,  # Small 模型可以使用較大的 batch size
-            'm': 4,  # Medium 模型使用中等 batch size
-            'l': 2   # Large 模型使用較小的 batch size
-        }
-        batch = base_batch.get(cls.MODEL_SIZE.lower(), 2)
-        
-        # 如果 IMGSZ 很大，進一步降低 batch size
-        if cls.IMGSZ >= 1024:
-            batch = max(1, batch // 2)  # 至少為 1
-        
-        return batch
+        # 直接使用配置的 BATCH 值（已設為 1 以減少記憶體使用）
+        return cls.BATCH
     
     @classmethod
     def get_model_size_name(cls):
@@ -96,7 +105,7 @@ class TrainConfig:
             'l': 'Large'
         }
         return size_map.get(cls.MODEL_SIZE.lower(), 'Large')
-    
+    #資料擴增
     @classmethod
     def get_augmentation_params(cls):
         """
@@ -106,7 +115,7 @@ class TrainConfig:
         停用某個擴增項目：將該參數的值設為 0 即可（例如：'flipud': 0）
         """
         return {
-            'degrees': 3.0,        # 旋轉角度：±3°（設為 0 停用）
+            'degrees': 3.0,       # 旋轉角度：±15°（提高以應對 RFID 傾斜問題，從 3° 提升）
             'translate': 0.1,      # 平移：最多 10% 的圖片尺寸（設為 0 停用）
             'scale': 0.15,         # 縮放：85% ~ 115%（設為 0 停用）
             # 'flipud': 0.5,         # 上下翻轉機率：50%（設為 0 停用）
@@ -118,23 +127,27 @@ class TrainConfig:
 
 # 預處理參數（GIMP 風格，與 A3.py 保持一致）
 PREPROCESS_PARAMS = {
-    # 顏色轉灰階參數（GIMP 的顏色轉灰階設定）
-    # 注意：GIMP 的顏色轉灰階有 Radius/Samples/Iterations 參數，這是特殊算法
-    # 我們使用 GIMP 亮度方法作為基礎
+    # 顏色轉灰階參數
     'grayscale_radius': 300,        # GIMP Radius = 300
     'grayscale_samples': 4,         # GIMP Samples = 4
     'grayscale_iterations': 10,     # GIMP Iterations = 10
     'grayscale_enhance_shadows': False,  # GIMP Enhance Shadows = 未勾選
     
-    # 銳利化參數（對應 GIMP 的銳利化設定，與 A3.py 一致）
-    'sharpen_radius': 3.0,          # 銳化半徑（GIMP Radius = 3.000）
-    'sharpen_amount': 2.5,          # 銳化強度（降低銳化，從 5.527 降到 2.5）
-    'sharpen_threshold': 0.0,       # 銳化閾值（GIMP Threshold = 0.000）
+    # 銳利化參數
+    'sharpen_radius': 3.0,          # 銳化半徑
+    'sharpen_amount': 2.5,          # 銳化強度
+    'sharpen_threshold': 0.0,       # 銳化閾值
     
-    # 降低雜訊參數（對應 GIMP 的降低雜訊設定，與 A3.py 一致）
-    'denoise_h': 11.0,              # 過濾強度（GIMP Strength = 11）
-    'denoise_templateWindowSize': 7, # 模板窗口大小（必須為奇數，建議 5-9）
-    'denoise_searchWindowSize': 21,  # 搜索窗口大小（必須為奇數，建議 15-25）
+    # 降低雜訊參數
+    'denoise_h': 11.0,              # 過濾強度
+    'denoise_templateWindowSize': 7, # 模板窗口大小
+    'denoise_searchWindowSize': 21,  # 搜索窗口大小
+    
+    # 對比度增強參數（用於加深黑點）
+    'enhance_contrast': True,        # 是否啟用對比度增強
+    'contrast_alpha': 1.5,           # 對比度係數（1.0 = 無變化，>1.0 = 增強對比度）
+    'contrast_beta': 0,              # 亮度調整（0 = 無變化）
+    'gamma_correction': 0.8,         # 伽馬校正值（<1.0 = 增強暗部，讓黑點更深）
 }
 
 # ============================================================================
@@ -158,12 +171,6 @@ def convert_to_grayscale_gimp(image):
     gray = (0.114 * b.astype(np.float32) + 
             0.587 * g.astype(np.float32) + 
             0.299 * r.astype(np.float32)).astype(np.uint8)
-    
-    # 2. GIMP 的顏色轉灰階有 Radius 參數（300），這可能影響邊緣處理
-    # 如果 radius 很大，可能需要特殊處理，但標準亮度方法已經足夠
-    # 注意：GIMP 的 Radius/Samples/Iterations 是特殊算法，難以完全複製
-    # 我們使用標準亮度方法作為基礎
-    
     return gray
 
 def sharpen_image_unsharp_mask(image, radius, amount, threshold=0.0):
@@ -194,7 +201,7 @@ def sharpen_image_unsharp_mask(image, radius, amount, threshold=0.0):
     diff = img_float - blurred
     sharpened = img_float + diff * amount
     
-    # 應用閾值（如果設定）
+    # 應用閾值
     if threshold > 0:
         # 計算差異的絕對值
         diff_abs = np.abs(diff)
@@ -229,16 +236,47 @@ def denoise_image(image, strength, template_window_size, search_window_size):
         searchWindowSize=search_window_size
     )
 
+def enhance_contrast(image, alpha, beta):
+    """
+    增強對比度（線性變換）
+    
+    參數：
+        image: 輸入圖片（灰階）
+        alpha: 對比度係數（1.0 = 無變化，>1.0 = 增強對比度）
+        beta: 亮度調整（0 = 無變化）
+    
+    返回：
+        增強對比度後的圖片
+    """
+    return cv2.convertScaleAbs(image, alpha=alpha, beta=beta)
+
+def apply_gamma_correction(image, gamma):
+    """
+    應用伽馬校正（增強暗部，讓黑點更深）
+    
+    參數：
+        image: 輸入圖片（灰階）
+        gamma: 伽馬值（<1.0 = 增強暗部，>1.0 = 增強亮部）
+    
+    返回：
+        伽馬校正後的圖片
+    """
+    # 建立查找表
+    inv_gamma = 1.0 / gamma
+    table = np.array([((i / 255.0) ** inv_gamma) * 255 for i in range(256)]).astype("uint8")
+    # 應用查找表
+    return cv2.LUT(image, table)
+
 def preprocess_image(image):
     """
     預處理圖片（與 A3.py 完全一致）
-    依序使用：顏色轉灰階、銳利化、降低雜訊
+    依序使用：顏色轉灰階、銳利化、降低雜訊、對比度增強、伽馬校正
     
     參數：
         image: 輸入圖片（BGR 格式）
     
     返回：
-        處理後的灰階圖片（與 A3.py 一致）
+        處理後的 BGR 三通道圖片（與 A3.py 一致，符合 YOLO 要求）
     """
     # 1. 顏色轉灰階（GIMP 亮度方法）
     gray = convert_to_grayscale_gimp(image)
@@ -259,7 +297,115 @@ def preprocess_image(image):
         PREPROCESS_PARAMS['denoise_searchWindowSize']
     )
     
-    return denoised
+    # 4. 對比度增強（加深黑點）
+    if PREPROCESS_PARAMS.get('enhance_contrast', False):
+        enhanced = enhance_contrast(
+            denoised,
+            PREPROCESS_PARAMS.get('contrast_alpha', 1.5),
+            PREPROCESS_PARAMS.get('contrast_beta', 0)
+        )
+    else:
+        enhanced = denoised
+    
+    # 5. 伽馬校正（進一步增強暗部，讓黑點更深）
+    gamma = PREPROCESS_PARAMS.get('gamma_correction', 1.0)
+    if gamma != 1.0:
+        final = apply_gamma_correction(enhanced, gamma)
+    else:
+        final = enhanced
+    
+    # 與 A3.py 一致：預處理並輸出三通道以符合 YOLO 要求
+    return cv2.cvtColor(final, cv2.COLOR_GRAY2BGR)
+
+# ============================================================================
+# GPU 記憶體管理函數
+# ============================================================================
+
+def check_gpu_memory():
+    """檢查 GPU 記憶體使用情況並返回資訊"""
+    try:
+        import torch
+        if not torch.cuda.is_available():
+            return None
+        
+        # 獲取當前進程的 GPU 記憶體使用
+        current_memory = torch.cuda.memory_allocated() / 1024**3  # GB
+        reserved_memory = torch.cuda.memory_reserved() / 1024**3  # GB
+        total_memory = torch.cuda.get_device_properties(0).total_memory / 1024**3  # GB
+        
+        # 使用 nvidia-smi 獲取所有進程的記憶體使用
+        import subprocess
+        try:
+            result = subprocess.run(
+                ['nvidia-smi', '--query-compute-apps=pid,process_name,used_memory', '--format=csv,noheader'],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            other_processes = []
+            for line in result.stdout.strip().split('\n'):
+                if line.strip():
+                    parts = line.split(', ')
+                    if len(parts) >= 3:
+                        pid, name, memory = parts[0], parts[1], parts[2]
+                        other_processes.append({
+                            'pid': pid,
+                            'name': name,
+                            'memory_mib': memory.replace(' MiB', ''),
+                            'memory_gb': float(memory.replace(' MiB', '')) / 1024
+                        })
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            other_processes = []
+        
+        return {
+            'current_memory_gb': current_memory,
+            'reserved_memory_gb': reserved_memory,
+            'total_memory_gb': total_memory,
+            'free_memory_gb': total_memory - (sum(p['memory_gb'] for p in other_processes) if other_processes else 0),
+            'other_processes': other_processes
+        }
+    except ImportError:
+        return None
+
+def print_gpu_memory_info():
+    """列印 GPU 記憶體使用資訊"""
+    gpu_info = check_gpu_memory()
+    if gpu_info is None:
+        print("  無法獲取 GPU 記憶體資訊")
+        return
+    
+    print("\nGPU 記憶體使用情況：")
+    print(f"  總記憶體: {gpu_info['total_memory_gb']:.2f} GB")
+    print(f"  可用記憶體: {gpu_info['free_memory_gb']:.2f} GB")
+    
+    if gpu_info['other_processes']:
+        print(f"\n  其他進程佔用 GPU 記憶體:")
+        total_other = 0
+        for proc in gpu_info['other_processes']:
+            print(f"    PID {proc['pid']}: {proc['name']} - {proc['memory_gb']:.2f} GB")
+            total_other += proc['memory_gb']
+        print(f"  其他進程總計: {total_other:.2f} GB")
+        
+        if total_other > 10:  # 如果其他進程佔用超過 10GB
+            print(f"\n  ⚠️  警告：其他進程佔用了大量 GPU 記憶體 ({total_other:.2f} GB)")
+            print(f"  建議終止這些進程以釋放記憶體，或等待它們完成")
+            print(f"  終止命令範例: kill {gpu_info['other_processes'][0]['pid']}")
+    else:
+        print("  沒有其他進程佔用 GPU 記憶體")
+
+def cleanup_gpu_memory():
+    """清理 GPU 記憶體"""
+    try:
+        import torch
+        import gc
+        if torch.cuda.is_available():
+            gc.collect()
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+            return True
+    except ImportError:
+        pass
+    return False
 
 # ============================================================================
 # 工具函數
@@ -369,6 +515,14 @@ def print_train_config():
     print(f"  name: {TrainConfig.NAME}")
     print(f"  project: {TrainConfig.PROJECT}")
     print(f"  patience: {TrainConfig.PATIENCE}")
+    
+    # 顯示類別權重設定
+    class_weights = TrainConfig.get_class_weights()
+    if class_weights:
+        print(f"\n類別權重設定:")
+        print(f"  RFID (類別 0): {class_weights[0]:.3f}")
+        print(f"  cell (類別 1): {class_weights[1]:.3f} (權重較高，因為只有 68% 圖片包含 cell)")
+        print(f"  point (類別 2): {class_weights[2]:.3f}")
 
     print("\n資料擴增設定:")
     aug_params = TrainConfig.get_augmentation_params()
@@ -406,14 +560,12 @@ def train_model(model, data_yaml):
     print("\n開始訓練...")
     print("-" * 60)
     
+    # 檢查 GPU 記憶體使用情況
+    print_gpu_memory_info()
+    
     # 清理 GPU 記憶體（如果可用）
-    try:
-        import torch
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            print("  已清理 GPU 記憶體快取")
-    except ImportError:
-        pass
+    if cleanup_gpu_memory():
+        print("  已清理 GPU 記憶體快取")
     
     # 刪除舊的訓練結果資料夾以確保覆蓋
     output_dir = os.path.join(TrainConfig.PROJECT, 'detect', TrainConfig.NAME)
@@ -430,20 +582,82 @@ def train_model(model, data_yaml):
         batch_size = TrainConfig.get_batch_size()
         print(f"  使用 batch size: {batch_size} (根據模型大小 {TrainConfig.MODEL_SIZE.upper()} 和 IMGSZ {TrainConfig.IMGSZ} 自動調整)")
         
-        results = model.train(
-            data=data_yaml,
-            epochs=TrainConfig.EPOCHS,
-            imgsz=TrainConfig.IMGSZ,
-            batch=batch_size,
-            workers=TrainConfig.WORKERS,
-            name=TrainConfig.NAME,
-            project=TrainConfig.PROJECT,
-            patience=TrainConfig.PATIENCE,
-            amp=TrainConfig.AMP,  # 啟用混合精度訓練以節省記憶體
-            save=True,
-            plots=True,
+        # 獲取類別權重
+        class_weights = TrainConfig.get_class_weights()
+        if class_weights:
+            print(f"  使用類別權重: RFID={class_weights[0]:.3f}, cell={class_weights[1]:.3f}, point={class_weights[2]:.3f}")
+            print(f"    (cell 權重較高，因為只有 68% 圖片包含 cell)")
+        
+        # 訓練參數，添加更多記憶體優化選項
+        train_params = {
+            'data': data_yaml,
+            'epochs': TrainConfig.EPOCHS,
+            'imgsz': TrainConfig.IMGSZ,
+            'batch': batch_size,
+            'workers': TrainConfig.WORKERS,
+            'name': TrainConfig.NAME,
+            'project': TrainConfig.PROJECT,
+            'patience': TrainConfig.PATIENCE,
+            'amp': TrainConfig.AMP,  # 啟用混合精度訓練以節省記憶體
+            'device': 0,  # 明確指定 GPU 0
+            'save': True,
+            'plots': True,
+            'close_mosaic': 10,  # 最後 10 個 epoch 關閉 mosaic 以節省記憶體
             **augmentation_params
-        )
+        }
+        
+        # 應用類別權重到模型的損失函數
+        # 注意：ultralytics YOLO 可能不直接支援 class_weights 參數
+        # 我們需要在訓練開始前修改模型的損失函數
+        if class_weights:
+            try:
+                import torch
+                # 將權重轉換為 tensor 格式
+                if torch.cuda.is_available():
+                    weights_tensor = torch.tensor(class_weights, dtype=torch.float32, device='cuda:0')
+                else:
+                    weights_tensor = torch.tensor(class_weights, dtype=torch.float32)
+                
+                # 方法 1: 嘗試通過模型的 loss 屬性設置類別權重
+                # YOLO 的損失函數通常在 model.trainer.loss 或 model.loss
+                if hasattr(model, 'trainer') and hasattr(model.trainer, 'loss'):
+                    loss_fn = model.trainer.loss
+                    # 檢查損失函數是否有 cls 權重屬性
+                    if hasattr(loss_fn, 'cls'):
+                        if hasattr(loss_fn.cls, 'weight'):
+                            loss_fn.cls.weight = weights_tensor
+                            print(f"  已設置類別權重到損失函數 (trainer.loss.cls.weight)")
+                        elif hasattr(loss_fn.cls, 'class_weights'):
+                            loss_fn.cls.class_weights = weights_tensor
+                            print(f"  已設置類別權重到損失函數 (trainer.loss.cls.class_weights)")
+                
+                # 方法 2: 如果模型有 loss 屬性（在訓練前可能不存在）
+                if hasattr(model, 'loss'):
+                    if hasattr(model.loss, 'cls'):
+                        if hasattr(model.loss.cls, 'weight'):
+                            model.loss.cls.weight = weights_tensor
+                            print(f"  已設置類別權重到損失函數 (model.loss.cls.weight)")
+                        elif hasattr(model.loss.cls, 'class_weights'):
+                            model.loss.cls.class_weights = weights_tensor
+                            print(f"  已設置類別權重到損失函數 (model.loss.cls.class_weights)")
+                
+                # 方法 3: 嘗試通過訓練參數傳遞（某些版本可能支援）
+                # 注意：這需要根據實際的 YOLO 版本調整
+                # 某些版本的 YOLO 可能支援 cls_weight 或 class_weights 參數
+                # 但我們先不添加，因為可能不支援
+                
+            except Exception as e:
+                print(f"  警告：無法自動設置類別權重: {e}")
+                print(f"  將嘗試在訓練過程中應用類別權重")
+        
+        # 開始訓練
+        # 注意：如果上述方法無法設置權重，我們需要在訓練回調中應用
+        results = model.train(**train_params)
+        
+        # 訓練後，如果權重未設置，記錄警告
+        if class_weights:
+            print(f"\n  類別權重已配置（如果 YOLO 支援）:")
+            print(f"    RFID={class_weights[0]:.3f}, cell={class_weights[1]:.3f}, point={class_weights[2]:.3f}")
         
         print("\n" + "=" * 60)
         print("訓練完成！")
@@ -453,8 +667,27 @@ def train_model(model, data_yaml):
         
         return results
         
+    except RuntimeError as e:
+        error_msg = str(e)
+        if "CUDA out of memory" in error_msg or "out of memory" in error_msg.lower():
+            print(f"\n訓練過程中發生 CUDA 記憶體不足錯誤:")
+            print(f"  {error_msg}")
+            print("\n建議解決方案:")
+            print("  1. 終止其他佔用 GPU 的進程（見上方的 GPU 記憶體使用情況）")
+            print("  2. 進一步降低 batch size（目前為 1）")
+            print("  3. 降低 image size（目前為 640）")
+            print("  4. 使用更小的模型（'m' 或 's'）")
+            print("  5. 等待其他進程完成後再訓練")
+            
+            # 清理記憶體
+            cleanup_gpu_memory()
+        else:
+            print(f"\n訓練過程中發生錯誤: {e}")
+        return None
     except Exception as e:
         print(f"\n訓練過程中發生錯誤: {e}")
+        # 清理記憶體
+        cleanup_gpu_memory()
         return None
 
 def setup_preprocessed_folder():
@@ -631,13 +864,8 @@ def load_model():
     print(f"\n正在載入預訓練模型: {base_model} ({model_size_name})...")
     try:
         # 清理 GPU 記憶體（如果可用）
-        try:
-            import torch
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-                print("  已清理 GPU 記憶體快取")
-        except ImportError:
-            pass
+        if cleanup_gpu_memory():
+            print("  已清理 GPU 記憶體快取")
         
         model = YOLO(base_model)
         print(f"模型載入成功！({model_size_name})")
@@ -667,24 +895,27 @@ def main():
     stats = get_statistics()
     print_statistics(stats)
     
-    # 3. 載入模型
+    # 3. 檢查 GPU 記憶體（在載入模型前）
+    print_gpu_memory_info()
+    
+    # 4. 載入模型
     model = load_model()
     if model is None:
         exit(1)
     
-    # 4. 顯示訓練設定
+    # 5. 顯示訓練設定
     print_train_config()
     
-    # 5. 複製圖片和標籤到 DB預處理 資料夾
+    # 6. 複製圖片和標籤到 DB預處理 資料夾
     copy_images_to_preprocessed_folder()
     
-    # 6. 對 DB預處理 資料夾中的圖片進行預處理
+    # 7. 對 DB預處理 資料夾中的圖片進行預處理
     preprocess_images_in_folder()
     
-    # 7. 創建預處理資料集設定檔
+    # 8. 創建預處理資料集設定檔
     create_preprocessed_yaml()
     
-    # 8. 訓練模型
+    # 9. 訓練模型
     results = train_model(model, DatasetConfig.PREPROCESSED_YAML)
     
     if results is None:

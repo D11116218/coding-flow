@@ -5,13 +5,13 @@ data: DB預處理_dataset.yaml
 epochs: 500
 time: null
 patience: 20
-batch: 4
-imgsz: 1024
+batch: 1
+imgsz: 640
 save: true
 save_period: -1
 cache: false
-device: null
-workers: 2
+device: '0'
+workers: 1
 project: runs
 name: DB_cell_detection12
 exist_ok: false

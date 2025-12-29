@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+﻿#!/home/dssignal/coding-flow/.venv/bin/python3
 # YOLOv12 細胞偵測程式 - 圖片標記
 
 import os
@@ -22,6 +22,7 @@ IMAGE_EXTENSIONS = ['*.jpg', '*.jpeg', '*.png', '*.JPG', '*.JPEG', '*.PNG']
 # YOLO 模型設定
 MODEL_SIZE = 'l'  # 'n' (nano), 's' (small), 'm' (medium), 'l' (large), 'x' (extra large)
 YOLO_MODEL_PATH = f"runs/DB_cell_detection12/weights/best.pt"  # YOLO 訓練好的模型路徑
+IMGSZ = 640  # 圖片尺寸，必須與訓練時一致（train_DB.py 中的 IMGSZ）
 
 # 預處理設定
 USE_PREPROCESSING = True  # True = 使用預處理（與訓練時一致），False = 使用原始圖片
@@ -33,16 +34,16 @@ FILTER_CONFIG = {
     # 注意：YOLO 模型層使用最低值，然後在程式層進行類別特定的過濾
     'first_confidence_by_class': {
         # 降低類別特定的信心度門檻，讓更多檢測結果通過（因模型信心值偏低）
-        'RFID': 0.5,   # 0.01 
-        'cell': 0.05,  # 0.01 
-        'point': 0.05  # 0.01 
+        'RFID': 0.5,   # RFID 保持較高閾值
+        'cell': 0.01,  # 大幅降低 cell 信心度閾值，讓更多 cell 通過
+        'point': 0.01  # 大幅降低 point 信心度閾值，讓更多 point 通過
     },
     # YOLO 模型層使用最低的信心度值
     'yolo_conf_threshold': 0.001,  # 提高以過濾極低分框，但仍保持較低門檻
     # NMS（非極大值抑制）數：過濾重疊的檢測框
-    'yolo_iou_threshold': 0.15,   # YOLO 內建 NMS IoU 閾值   (越高越積極過濾）
-    'same_class_nms_threshold': 0.15,  # 同類別 NMS IoU 閾值（越高越積極過濾）
-    'cross_class_iou_threshold': 0.3,  # 跨類別 NMS IoU 閾值（越高越積極過濾）
+    'yolo_iou_threshold': 0.1,   # 降低 YOLO 內建 NMS IoU 閾值，從 0.15 降到 0.1，保留更多檢測框
+    'same_class_nms_threshold': 0.05,  # 進一步降低同類別 NMS IoU 閾值，保留更多重疊的 cell 和 point
+    'cross_class_iou_threshold': 0.7,  # 大幅提高跨類別 NMS IoU 閾值，幾乎不進行跨類別過濾（只過濾高度重疊的框）
     'rfid_same_class_nms_threshold': 0.1,  # RFID 專用同類別 NMS 閾值（越高越積極過濾）
     
     # 面積過濾
@@ -93,6 +94,12 @@ PREPROCESS_PARAMS = {
     'denoise_h': 11.0,              # 過濾強度
     'denoise_templateWindowSize': 7, # 模板窗口大小
     'denoise_searchWindowSize': 21,  # 搜索窗口大小
+    
+    # 對比度增強參數（用於加深黑點）
+    'enhance_contrast': True,        # 是否啟用對比度增強
+    'contrast_alpha': 1.5,           # 對比度係數（1.0 = 無變化，>1.0 = 增強對比度）
+    'contrast_beta': 0,              # 亮度調整（0 = 無變化）
+    'gamma_correction': 0.8,         # 伽馬校正值（<1.0 = 增強暗部，讓黑點更深）
 }
 
 # ============================================================================
@@ -181,10 +188,41 @@ def denoise_image(image, strength, template_window_size, search_window_size):
         searchWindowSize=search_window_size
     )
 
+def enhance_contrast(image, alpha, beta):
+    """
+    增強對比度（線性變換）
+    
+    參數：
+        image: 輸入圖片（灰階）
+        alpha: 對比度係數（1.0 = 無變化，>1.0 = 增強對比度）
+        beta: 亮度調整（0 = 無變化）
+    
+    返回：
+        增強對比度後的圖片
+    """
+    return cv2.convertScaleAbs(image, alpha=alpha, beta=beta)
+
+def apply_gamma_correction(image, gamma):
+    """
+    應用伽馬校正（增強暗部，讓黑點更深）
+    
+    參數：
+        image: 輸入圖片（灰階）
+        gamma: 伽馬值（<1.0 = 增強暗部，>1.0 = 增強亮部）
+    
+    返回：
+        伽馬校正後的圖片
+    """
+    # 建立查找表
+    inv_gamma = 1.0 / gamma
+    table = np.array([((i / 255.0) ** inv_gamma) * 255 for i in range(256)]).astype("uint8")
+    # 應用查找表
+    return cv2.LUT(image, table)
+
 def preprocess_image(image):
     """
     預處理圖片（與 train_DB.py 完全一致）
-    依序使用：顏色轉灰階、銳利化、降低雜訊
+    依序使用：顏色轉灰階、銳利化、降低雜訊、對比度增強、伽馬校正
     
     參數：
         image: 輸入圖片（BGR 格式）
@@ -211,8 +249,25 @@ def preprocess_image(image):
         PREPROCESS_PARAMS['denoise_searchWindowSize']
     )
     
+    # 4. 對比度增強（加深黑點）
+    if PREPROCESS_PARAMS.get('enhance_contrast', False):
+        enhanced = enhance_contrast(
+            denoised,
+            PREPROCESS_PARAMS.get('contrast_alpha', 1.5),
+            PREPROCESS_PARAMS.get('contrast_beta', 0)
+        )
+    else:
+        enhanced = denoised
+    
+    # 5. 伽馬校正（進一步增強暗部，讓黑點更深）
+    gamma = PREPROCESS_PARAMS.get('gamma_correction', 1.0)
+    if gamma != 1.0:
+        final = apply_gamma_correction(enhanced, gamma)
+    else:
+        final = enhanced
+    
     # 與 train_DB.py 一致：預處理並輸出三通道以符合 YOLO 要求
-    return cv2.cvtColor(denoised, cv2.COLOR_GRAY2BGR)
+    return cv2.cvtColor(final, cv2.COLOR_GRAY2BGR)
 
 # ============================================================================
 # 資料處理函數
@@ -246,6 +301,7 @@ def detect_objects_yolo(model, detection_image, conf_threshold, iou_threshold):
         detection_image, 
         conf=conf_threshold, 
         iou=iou_threshold,  # NMS IoU 閾值：過濾重疊的檢測框
+        imgsz=IMGSZ,  # 指定圖片尺寸，必須與訓練時一致
         verbose=False
     )
     detections = results[0]
@@ -300,30 +356,6 @@ def parse_detection_box(box, detections, imgwidth, imgheight):
         'area': area, 'confidence': confidence,
         'class': class_name, 'class_id': class_id
     }
-
-def validate_and_clip_coordinates(obj, imgwidth, imgheight):
-    """驗證並裁剪座標到圖片範圍內"""
-    x1, y1, x2, y2 = obj['x1'], obj['y1'], obj['x2'], obj['y2']
-    
-    # 裁剪到圖片範圍內
-    x1 = max(0, min(x1, imgwidth - 1))
-    y1 = max(0, min(y1, imgheight - 1))
-    x2 = max(x1 + 1, min(x2, imgwidth))
-    y2 = max(y1 + 1, min(y2, imgheight))
-    
-    # 重新計算尺寸
-    w = x2 - x1
-    h = y2 - y1
-    area = w * h
-    cx = x1 + w // 2
-    cy = y1 + h // 2
-    
-    obj.update({
-        'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2,
-        'w': w, 'h': h, 'cx': cx, 'cy': cy, 'area': area
-    })
-    
-    return obj
 
 def calculate_iou(box1, box2):
     """計算兩個檢測框之間的 IoU（Intersection over Union）"""
@@ -410,13 +442,11 @@ def apply_same_class_nms(detected_objects, iou_threshold):
     return result
 
 def apply_cross_class_nms(detected_objects, iou_threshold):
-    """跨類別 NMS，並對類別給優先權：RFID > cell > point"""
+    """跨類別 NMS，根據信心度決定保留哪個框"""
     if len(detected_objects) <= 1:
         return detected_objects
     
-    # 類別優先權（RFID > cell > point）
-    class_priority = {'RFID': 2, 'cell': 1, 'point': 0}
-    
+    # 特殊處理：如果 RFID 和 cell 重疊，保留兩者（由後續的 RFID 框內過濾處理）
     # 按信心度降序排序
     sorted_objects = sorted(detected_objects, key=lambda x: x['confidence'], reverse=True)
     keep = []
@@ -424,20 +454,24 @@ def apply_cross_class_nms(detected_objects, iou_threshold):
     while sorted_objects:
         # 取出信心度最高的框
         current = sorted_objects.pop(0)
-        # 與已保留的框做比較，如重疊則依類別優先權/信心度決定保留誰
+        # 與已保留的框做比較，如重疊則依信心度決定保留誰
         new_keep = []
         keep_current = True
         for kept in keep:
             iou = calculate_iou(current, kept)
             if iou > iou_threshold:
-                p_cur = class_priority.get(current['class'], 0)
-                p_keep = class_priority.get(kept['class'], 0)
+                # 特殊處理：如果 RFID 和 cell/point 重疊，保留兩者（由後續的 RFID 框內過濾處理）
+                if (current['class'] == 'RFID' and kept['class'] in ['cell', 'point']) or \
+                   (current['class'] in ['cell', 'point'] and kept['class'] == 'RFID'):
+                    # 保留兩者，不互相過濾
+                    new_keep.append(kept)
+                    continue
                 
-                # 若 current 類別優先或同優先但信心度較高，則替換原框
-                if (p_cur > p_keep) or (p_cur == p_keep and current['confidence'] > kept['confidence']):
-                    continue  # 丟掉 kept，改保留 current
+                # 其他情況：根據信心度決定保留哪個框
+                if current['confidence'] > kept['confidence']:
+                    continue  # 丟掉 kept，改保留 current（信心度更高）
                 else:
-                    keep_current = False  # 保留 kept，丟掉 current
+                    keep_current = False  # 保留 kept，丟掉 current（kept 信心度更高或相等）
                     new_keep.append(kept)
             else:
                 new_keep.append(kept)
@@ -477,7 +511,6 @@ def filter_detections(detections, imgwidth, imgheight):
         
         # 如果通過過濾，加入結果
         if area_ok and conf_ok and coord_ok:
-            obj = validate_and_clip_coordinates(obj, imgwidth, imgheight)
             detected_objects.append(obj)
             if class_name in class_counts:
                 class_counts[class_name] += 1
@@ -601,26 +634,67 @@ def process_image(image_path, model):
     )
     print_detection_info(detections, num_boxes)
     
-    # 診斷：顯示所有原始 RFID 偵測結果（在過濾前）
+    # 診斷：顯示所有原始偵測結果（在過濾前）
     if detections.boxes is not None and len(detections.boxes) > 0:
-        rfid_raw = []
+        # 統計各類別的原始偵測數量
+        raw_counts = {'RFID': 0, 'cell': 0, 'point': 0}
+        raw_confidences = {'RFID': [], 'cell': [], 'point': []}
         for box in detections.boxes:
             cls_id = int(box.cls[0].cpu().numpy()) if box.cls is not None else 0
-            if cls_id == 0:  # RFID 的 class_id 是 0
-                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-                conf = float(box.conf[0].cpu().numpy())
-                rfid_raw.append({
-                    'x1': int(x1), 'y1': int(y1), 'x2': int(x2), 'y2': int(y2),
-                    'confidence': conf
-                })
-        if len(rfid_raw) > 0:
-            print(f"  🔍 原始 RFID 偵測結果（YOLO 輸出，共 {len(rfid_raw)} 個）:")
-            for i, rfid in enumerate(rfid_raw):
-                print(f"    [{i+1}] conf={rfid['confidence']:.3f}, pos=({rfid['x1']},{rfid['y1']}), size=({rfid['x2']-rfid['x1']})x({rfid['y2']-rfid['y1']})")
+            conf = float(box.conf[0].cpu().numpy())
+            class_name = CLASS_MAPPING.get(cls_id, f"class_{cls_id}")
+            if class_name in raw_counts:
+                raw_counts[class_name] += 1
+                raw_confidences[class_name].append(conf)
+        
+        print(f"  🔍 原始 YOLO 偵測結果（過濾前）:")
+        for class_name in ['RFID', 'cell', 'point']:
+            if raw_counts[class_name] > 0:
+                confs = raw_confidences[class_name]
+                avg_conf = sum(confs) / len(confs)
+                min_conf = min(confs)
+                max_conf = max(confs)
+                print(f"    {class_name}: {raw_counts[class_name]} 個, 信心度範圍: {min_conf:.4f} ~ {max_conf:.4f}, 平均: {avg_conf:.4f}")
     
     # 過濾偵測結果
     detected_objects, class_counts = filter_detections(detections, imgwidth, imgheight)
-    print(f"  程式層過濾後 - RFID: {class_counts['RFID']}, cell: {class_counts['cell']}, point: {class_counts['point']}")
+    print(f"  程式層信心度過濾後 - RFID: {class_counts['RFID']}, cell: {class_counts['cell']}, point: {class_counts['point']}")
+    
+    # 診斷：顯示過濾後的 cell 和 point 詳細資訊
+    cell_after_filter = [obj for obj in detected_objects if obj['class'] == 'cell']
+    point_after_filter = [obj for obj in detected_objects if obj['class'] == 'point']
+    if len(cell_after_filter) > 0:
+        print(f"  🔍 過濾後的 cell（共 {len(cell_after_filter)} 個）:")
+        for i, cell in enumerate(cell_after_filter[:5]):  # 只顯示前 5 個
+            print(f"    [{i+1}] conf={cell['confidence']:.4f}, pos=({cell['x1']},{cell['y1']}), size={cell['w']}x{cell['h']}")
+    if len(point_after_filter) > 0:
+        print(f"  🔍 過濾後的 point（共 {len(point_after_filter)} 個）:")
+        for i, point in enumerate(point_after_filter[:5]):  # 只顯示前 5 個
+            print(f"    [{i+1}] conf={point['confidence']:.4f}, pos=({point['x1']},{point['y1']}), size={point['w']}x{point['h']}")
+    
+    # 診斷：顯示被過濾掉的 cell 和 point（信心度不足）
+    if detections.boxes is not None and len(detections.boxes) > 0:
+        filtered_cells = []
+        filtered_points = []
+        for box in detections.boxes:
+            cls_id = int(box.cls[0].cpu().numpy()) if box.cls is not None else 0
+            conf = float(box.conf[0].cpu().numpy())
+            class_name = CLASS_MAPPING.get(cls_id, f"class_{cls_id}")
+            min_conf = FILTER_CONFIG['first_confidence_by_class'].get(class_name, 0.01)
+            
+            if class_name == 'cell' and conf < min_conf:
+                filtered_cells.append(conf)
+            elif class_name == 'point' and conf < min_conf:
+                filtered_points.append(conf)
+        
+        if len(filtered_cells) > 0:
+            print(f"  ⚠️  有 {len(filtered_cells)} 個 cell 因信心度 < {FILTER_CONFIG['first_confidence_by_class']['cell']} 被過濾")
+            if len(filtered_cells) <= 5:
+                print(f"    被過濾的 cell 信心度: {[f'{c:.4f}' for c in filtered_cells]}")
+        if len(filtered_points) > 0:
+            print(f"  ⚠️  有 {len(filtered_points)} 個 point 因信心度 < {FILTER_CONFIG['first_confidence_by_class']['point']} 被過濾")
+            if len(filtered_points) <= 5:
+                print(f"    被過濾的 point 信心度: {[f'{c:.4f}' for c in filtered_points]}")
     
     # 診斷：顯示過濾後的 RFID 候選框
     rfid_after_filter = [obj for obj in detected_objects if obj['class'] == 'RFID']
@@ -642,6 +716,10 @@ def process_image(image_path, model):
     # 程式層同類別 NMS：針對同類別內的重疊框再做一次過濾
     # 對 RFID 使用更寬鬆的 NMS 閾值，保留更多候選框
     before_same_nms = len(detected_objects)
+    before_same_nms_by_class = {'RFID': 0, 'cell': 0, 'point': 0}
+    for obj in detected_objects:
+        if obj['class'] in before_same_nms_by_class:
+            before_same_nms_by_class[obj['class']] += 1
     
     # 分開處理 RFID 和其他類別
     rfid_objects_before_nms = [obj for obj in detected_objects if obj['class'] == 'RFID']
@@ -654,18 +732,43 @@ def process_image(image_path, model):
     
     detected_objects = rfid_after_nms + other_after_nms
     after_same_nms = len(detected_objects)
+    after_same_nms_by_class = {'RFID': 0, 'cell': 0, 'point': 0}
+    for obj in detected_objects:
+        if obj['class'] in after_same_nms_by_class:
+            after_same_nms_by_class[obj['class']] += 1
+    
     if before_same_nms != after_same_nms:
-        print(f"  同類別 NMS 過濾掉 {before_same_nms - after_same_nms} 個重疊框 (RFID: {len(rfid_objects_before_nms)} -> {len(rfid_after_nms)})")
+        print(f"  同類別 NMS 過濾掉 {before_same_nms - after_same_nms} 個重疊框")
+        for class_name in ['RFID', 'cell', 'point']:
+            removed = before_same_nms_by_class[class_name] - after_same_nms_by_class[class_name]
+            if removed > 0:
+                print(f"    - {class_name}: {before_same_nms_by_class[class_name]} -> {after_same_nms_by_class[class_name]} (移除 {removed} 個)")
     
     # 應用跨類別 NMS，過濾不同類別之間重疊的框（如 cell 和 point）
     before_cross_nms_count = len(detected_objects)
+    before_cross_nms_by_class = {'RFID': 0, 'cell': 0, 'point': 0}
+    for obj in detected_objects:
+        if obj['class'] in before_cross_nms_by_class:
+            before_cross_nms_by_class[obj['class']] += 1
+    
     detected_objects = apply_cross_class_nms(
         detected_objects, 
         FILTER_CONFIG['cross_class_iou_threshold']
     )
     after_cross_nms_count = len(detected_objects)
+    after_cross_nms_by_class = {'RFID': 0, 'cell': 0, 'point': 0}
+    for obj in detected_objects:
+        if obj['class'] in after_cross_nms_by_class:
+            after_cross_nms_by_class[obj['class']] += 1
+    
     if before_cross_nms_count != after_cross_nms_count:
-        print(f"  跨類別 NMS 過濾掉 {before_cross_nms_count - after_cross_nms_count} 個框")
+        print(f"  跨類別 NMS 過濾掉 {before_cross_nms_count - after_cross_nms_count} 個框 (IoU threshold: {FILTER_CONFIG['cross_class_iou_threshold']})")
+        for class_name in ['RFID', 'cell', 'point']:
+            removed = before_cross_nms_by_class[class_name] - after_cross_nms_by_class[class_name]
+            if removed > 0:
+                print(f"    - {class_name}: {before_cross_nms_by_class[class_name]} -> {after_cross_nms_by_class[class_name]} (移除 {removed} 個)")
+    else:
+        print(f"  跨類別 NMS 未過濾任何框 (IoU threshold: {FILTER_CONFIG['cross_class_iou_threshold']})")
     
     # 針對 RFID 選擇最佳的一個（考慮信心度和位置）
     rfid_objects = [obj for obj in detected_objects if obj['class'] == 'RFID']
@@ -739,7 +842,6 @@ def process_image(image_path, model):
                         # 如果這個候選框位置更好（更靠近邊緣），且信心度 > 0.3
                         if edge_score > 0.5 and conf > 0.3:
                             alt_rfid = parse_detection_box(box, detections, imgwidth, imgheight)
-                            alt_rfid = validate_and_clip_coordinates(alt_rfid, imgwidth, imgheight)
                             alternative_rfids.append((alt_rfid, conf, edge_score))
             
             if len(alternative_rfids) > 0:
@@ -756,17 +858,57 @@ def process_image(image_path, model):
         detected_objects = rfid_objects + other_objects
     
     # 過濾：移除 RFID 框內的 cell 和 point
+    # 重新從 detected_objects 中提取 RFID（確保使用最終選擇的 RFID）
+    rfid_objects = [obj for obj in detected_objects if obj['class'] == 'RFID']
     if len(rfid_objects) > 0:
         rfid_box = rfid_objects[0]  # 使用保留的 RFID 框
         before_rfid_filter = len(detected_objects)
+        
+        # 過濾條件：移除完全在 RFID 框內的，或中心點在 RFID 框內的 cell/point
+        def should_remove(obj):
+            """判斷是否應該移除這個物件"""
+            if obj['class'] == 'RFID':
+                return False  # 不移除 RFID 本身
+            
+            # 檢查 1：是否完全在 RFID 框內
+            if is_box_inside(obj, rfid_box):
+                return True
+            
+            # 檢查 2：中心點是否在 RFID 框內（處理部分重疊的情況）
+            cx_in = rfid_box['x1'] <= obj['cx'] <= rfid_box['x2']
+            cy_in = rfid_box['y1'] <= obj['cy'] <= rfid_box['y2']
+            if cx_in and cy_in:
+                return True
+            
+            # 檢查 3：計算 IoU，如果 IoU > 0.5 則認為重疊太多，應該移除（降低閾值，保留更多 cell 和 point）
+            iou = calculate_iou(obj, rfid_box)
+            if iou > 0.5:
+                return True
+            
+            return False
+        
+        before_rfid_filter_by_class = {'RFID': 0, 'cell': 0, 'point': 0}
+        for obj in detected_objects:
+            if obj['class'] in before_rfid_filter_by_class:
+                before_rfid_filter_by_class[obj['class']] += 1
+        
         detected_objects = [
             obj for obj in detected_objects 
-            if obj['class'] == 'RFID' or not is_box_inside(obj, rfid_box)
+            if not should_remove(obj)
         ]
         after_rfid_filter = len(detected_objects)
+        after_rfid_filter_by_class = {'RFID': 0, 'cell': 0, 'point': 0}
+        for obj in detected_objects:
+            if obj['class'] in after_rfid_filter_by_class:
+                after_rfid_filter_by_class[obj['class']] += 1
+        
         removed_count = before_rfid_filter - after_rfid_filter
         if removed_count > 0:
             print(f"  RFID 框內過濾：移除 {removed_count} 個在 RFID 框內的 cell/point 標記")
+            for class_name in ['cell', 'point']:
+                removed = before_rfid_filter_by_class[class_name] - after_rfid_filter_by_class[class_name]
+                if removed > 0:
+                    print(f"    - {class_name}: {before_rfid_filter_by_class[class_name]} -> {after_rfid_filter_by_class[class_name]} (移除 {removed} 個)")
     
     # 重新計算類別計數
     class_counts = {'RFID': 0, 'cell': 0, 'point': 0}
