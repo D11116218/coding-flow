@@ -52,9 +52,9 @@ FILTER_CONFIG = {
     
     # 6. 面積過濾
     'min_area_by_class': {
-        'RFID': 0.07,   # RFID 最小面積比例（相對於圖片大小）
-        'cell': 0.03,   # cell 最小面積比例
-        'point': 0.01   # point 最小面積比例
+        'RFID': 0.001,   # RFID 最小面積比例（相對於圖片大小）
+        'cell': 0.001,   # cell 最小面積比例
+        'point': 0.001   # point 最小面積比例
     },
     'max_area_ratio': 0.99,  # 最大面積比例（相對於圖片大小）
 }
@@ -90,7 +90,7 @@ PREPROCESS_PARAMS = {
     
     # 銳利化參數
     'sharpen_radius': 3.0,          # 銳化半徑
-    'sharpen_amount': 2.5,           # 銳化強度
+    'sharpen_amount': 1.5,           # 銳化強度（降低：從 2.5 降到 1.5，與 train_DB.py 一致）
     'sharpen_threshold': 0.0,       # 銳化閾值
     
     # 降低雜訊參數
@@ -476,6 +476,7 @@ def apply_same_class_nms(detected_objects, iou_threshold):
 def apply_cross_class_nms(detected_objects, iou_threshold):
     """
     跨類別NMS：過濾不同類別之間重疊的框，根據信心度決定保留哪個
+    特殊處理：RFID 優先保留（因為每張圖必須有一個 RFID）
     
     參數：
         detected_objects: 偵測物件列表
@@ -487,8 +488,16 @@ def apply_cross_class_nms(detected_objects, iou_threshold):
     if not detected_objects:
         return []
     
-    # 按信心度降序排序
-    sorted_objects = sorted(detected_objects, key=lambda x: x['confidence'], reverse=True)
+    # 分離 RFID 和其他物件
+    rfid_objects = [obj for obj in detected_objects if obj['class'] == 'RFID']
+    other_objects = [obj for obj in detected_objects if obj['class'] != 'RFID']
+    
+    # 先對其他物件進行跨類別 NMS（不包括 RFID）
+    if not other_objects:
+        return rfid_objects
+    
+    # 按信心度降序排序（不包括 RFID）
+    sorted_objects = sorted(other_objects, key=lambda x: x['confidence'], reverse=True)
     
     keep = []
     for current in sorted_objects:
@@ -517,7 +526,28 @@ def apply_cross_class_nms(detected_objects, iou_threshold):
         else:
             keep = new_keep
     
-    return keep
+    # 最後處理 RFID：如果 RFID 與其他物件重疊，優先保留 RFID
+    final_keep = keep.copy()
+    for rfid_obj in rfid_objects:
+        should_add_rfid = True
+        new_final_keep = []
+        
+        for kept_obj in final_keep:
+            iou = calculate_iou(rfid_obj, kept_obj)
+            if iou >= iou_threshold:
+                # RFID 與其他物件重疊，優先保留 RFID，移除其他物件
+                # 不將 kept_obj 加入 new_final_keep
+                pass
+            else:
+                # 不重疊，保留其他物件
+                new_final_keep.append(kept_obj)
+        
+        if should_add_rfid:
+            final_keep = new_final_keep + [rfid_obj]
+        else:
+            final_keep = new_final_keep
+    
+    return final_keep
 
 def filter_detections(detections, imgwidth, imgheight):
     """
@@ -637,38 +667,69 @@ def draw_bounding_boxes(image, detected_objects, imgwidth, imgheight):
     """在圖片上繪製標記框"""
     marked_count = 0
     marked_by_class = {'RFID': 0, 'cell': 0, 'point': 0}
+    invalid_coords_count = 0  # 記錄座標無效的物件數量
     
     for obj in detected_objects:
-        if obj["x1"] < obj["x2"] and obj["y1"] < obj["y2"]:
-            class_name = obj['class']
-            color = CLASS_COLORS.get(class_name, (255, 255, 255))
-            
-            # 繪製矩形框
-            cv2.rectangle(image, (obj["x1"], obj["y1"]), (obj["x2"], obj["y2"]), color, 2)
-            
-            # 添加標籤
-            label = f"{class_name} {obj['confidence']:.2f}"
-            (text_width, text_height), baseline = cv2.getTextSize(
-                label, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1
-            )
-            
-            # 標籤背景框
-            cv2.rectangle(
-                image,
-                (obj["x1"], obj["y1"] - text_height - 5),
-                (obj["x1"] + text_width, obj["y1"]),
-                color, -1
-            )
-            
-            # 黑色文字
-            cv2.putText(
-                image, label, (obj["x1"], obj["y1"] - 5),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 1
-            )
-            
-            marked_count += 1
-            if class_name in marked_by_class:
-                marked_by_class[class_name] += 1
+        # 完整的座標驗證
+        x1, y1, x2, y2 = obj.get("x1", 0), obj.get("y1", 0), obj.get("x2", 0), obj.get("y2", 0)
+        
+        # 驗證座標有效性
+        if not (x1 >= 0 and y1 >= 0 and x2 > x1 and y2 > y1 and 
+                x1 < imgwidth and y1 < imgheight and 
+                x2 <= imgwidth and y2 <= imgheight):
+            invalid_coords_count += 1
+            print(f"  ⚠️  警告：物件 {obj.get('class', 'unknown')} 座標無效，跳過繪製")
+            print(f"     座標: x1={x1}, y1={y1}, x2={x2}, y2={y2}, 圖片尺寸: {imgwidth}x{imgheight}")
+            continue
+        
+        class_name = obj['class']
+        color = CLASS_COLORS.get(class_name, (255, 255, 255))
+        
+        # 繪製矩形框
+        cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
+        
+        # 添加標籤
+        label = f"{class_name} {obj['confidence']:.2f}"
+        (text_width, text_height), baseline = cv2.getTextSize(
+            label, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1
+        )
+        
+        # 標籤背景框（確保不會超出圖片上邊界）
+        if y1 >= text_height + 5:
+            # 標籤在框上方（正常情況）
+            label_y1 = y1 - text_height - 5
+            label_y2 = y1
+            text_y = y1 - 5
+        else:
+            # 框太靠近上邊界，標籤放在框下方
+            label_y1 = y2
+            label_y2 = min(imgheight, y2 + text_height + 5)
+            text_y = min(imgheight - 5, y2 + text_height)
+        
+        # 確保標籤背景框不會超出圖片範圍
+        label_y1 = max(0, label_y1)
+        label_y2 = min(imgheight, label_y2)
+        text_x = max(0, min(x1, imgwidth - text_width))
+        
+        cv2.rectangle(
+            image,
+            (text_x, label_y1),
+            (text_x + text_width, label_y2),
+            color, -1
+        )
+        
+        # 黑色文字
+        cv2.putText(
+            image, label, (text_x, text_y),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 1
+        )
+        
+        marked_count += 1
+        if class_name in marked_by_class:
+            marked_by_class[class_name] += 1
+    
+    if invalid_coords_count > 0:
+        print(f"  ⚠️  總共有 {invalid_coords_count} 個物件因座標無效而跳過繪製")
     
     # 在左下角顯示統計
     text_width = 400
@@ -750,6 +811,23 @@ def process_image(image_path, model):
         FILTER_CONFIG['yolo_iou_threshold']        # YOLO內建NMS（重疊框過濾）
     )
     print_detection_info(detections, num_boxes)
+    
+    # 診斷：檢查原始檢測結果中是否有 RFID（過濾前）
+    if detections.boxes is not None and len(detections.boxes) > 0:
+        rfid_in_raw = 0
+        rfid_confidences = []
+        for box in detections.boxes:
+            cls_id = int(box.cls[0].cpu().numpy()) if box.cls is not None else 0
+            confidence = float(box.conf[0].cpu().numpy())
+            if cls_id == 0:  # RFID
+                rfid_in_raw += 1
+                rfid_confidences.append(confidence)
+        
+        if rfid_in_raw > 0:
+            print(f"  🔍 原始檢測結果中有 {rfid_in_raw} 個 RFID（過濾前）")
+            print(f"     RFID 信心度範圍: {min(rfid_confidences):.4f} ~ {max(rfid_confidences):.4f}")
+        else:
+            print(f"  ⚠️  原始檢測結果中沒有 RFID（模型未輸出 RFID 檢測框）")
     
     # 2. 過濾偵測結果（類別信心度過濾、面積過濾）
     detected_objects, class_counts = filter_detections(detections, imgwidth, imgheight)

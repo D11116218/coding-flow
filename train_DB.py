@@ -84,7 +84,7 @@ class TrainConfig:
     def get_augmentation_params(cls):
         """
         獲取資料擴增參數
-        包含：旋轉、平移、鏡像、拼湊、加權標記疊加
+        包含：旋轉、平移、鏡像、拼湊、加權標記疊加、縮放、剪切
         
         停用某個擴增項目：將該參數的值設為 0 即可
         """
@@ -94,6 +94,8 @@ class TrainConfig:
             'fliplr': 0.5,         # 左右翻轉機率：50%（鏡像擴增）
             'mosaic': 0.3,         # 拼湊機率：30%
             'mixup': 0.1,          # 加權標記疊加機率：10%
+            'scale': 0.5,          # 縮放範圍：0.5 = 50%-150%（±50%）
+            'shear': 2.0,          # 剪切角度：±2°
         }
 
 
@@ -107,7 +109,7 @@ PREPROCESS_PARAMS = {
     
     # 銳利化參數
     'sharpen_radius': 3.0,          # 銳化半徑
-    'sharpen_amount': 2.5,           # 銳化強度
+    'sharpen_amount': 1.5,           # 銳化強度（降低：從 2.5 降到 1.5）
     'sharpen_threshold': 0.0,       # 銳化閾值
     
     # 降低雜訊參數
