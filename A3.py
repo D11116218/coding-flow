@@ -52,9 +52,9 @@ FILTER_CONFIG = {
     
     # 6. 面積過濾
     'min_area_by_class': {
-        'RFID': 0.001,   # RFID 最小面積比例（相對於圖片大小）
-        'cell': 0.001,   # cell 最小面積比例
-        'point': 0.001   # point 最小面積比例
+        'RFID': 0.07,   # RFID 最小面積比例（相對於圖片大小）
+        'cell': 0.03,   # cell 最小面積比例
+        'point': 0.01   # point 最小面積比例
     },
     'max_area_ratio': 0.99,  # 最大面積比例（相對於圖片大小）
 }
@@ -808,6 +808,58 @@ def process_image(image_path, model):
             removed = before_cross_nms_by_class[class_name] - after_cross_nms_by_class[class_name]
             if removed > 0:
                 print(f"    - {class_name}: {before_cross_nms_by_class[class_name]} -> {after_cross_nms_by_class[class_name]} (移除 {removed} 個)")
+    
+    # 5. RFID過濾：每張圖只保留一個RFID標記（信心度最高的）
+    rfid_objects = [obj for obj in detected_objects if obj['class'] == 'RFID']
+    other_objects = [obj for obj in detected_objects if obj['class'] != 'RFID']
+    
+    if len(rfid_objects) > 1:
+        # 按信心度降序排序，只保留第一個（信心度最高的）
+        rfid_objects.sort(key=lambda x: x['confidence'], reverse=True)
+        removed_rfid_count = len(rfid_objects) - 1
+        print(f"  RFID過濾：保留信心度最高的RFID標記，移除 {removed_rfid_count} 個其他RFID標記")
+        print(f"    保留的RFID信心度: {rfid_objects[0]['confidence']:.4f}")
+        if removed_rfid_count > 0:
+            removed_confidences = [obj['confidence'] for obj in rfid_objects[1:]]
+            print(f"    移除的RFID信心度: {[f'{c:.4f}' for c in removed_confidences]}")
+        rfid_objects = [rfid_objects[0]]  # 只保留第一個
+    elif len(rfid_objects) == 1:
+        print(f"  RFID過濾：已有一個RFID標記（信心度: {rfid_objects[0]['confidence']:.4f}）")
+    else:
+        print(f"  RFID過濾：未偵測到RFID標記")
+    
+    # 6. 刪除RFID框內信心度低於0.5的cell
+    if len(rfid_objects) > 0:
+        rfid_box = rfid_objects[0]  # 使用唯一的RFID框
+        cell_objects = [obj for obj in other_objects if obj['class'] == 'cell']
+        point_objects = [obj for obj in other_objects if obj['class'] == 'point']
+        
+        filtered_cells = []
+        removed_cells = []
+        for cell_obj in cell_objects:
+            # 檢查cell是否在RFID框內
+            if is_box_inside(cell_obj, rfid_box):
+                # 在RFID框內，檢查信心度
+                if cell_obj['confidence'] < 0.5:
+                    removed_cells.append(cell_obj)
+                else:
+                    filtered_cells.append(cell_obj)
+            else:
+                # 不在RFID框內，保留
+                filtered_cells.append(cell_obj)
+        
+        if len(removed_cells) > 0:
+            print(f"  RFID框內cell過濾：移除 {len(removed_cells)} 個信心度低於0.5的cell")
+            removed_confidences = [obj['confidence'] for obj in removed_cells]
+            print(f"    移除的cell信心度: {[f'{c:.4f}' for c in removed_confidences]}")
+        else:
+            print(f"  RFID框內cell過濾：無需移除的cell")
+        
+        # 重新組合物件列表
+        detected_objects = rfid_objects + filtered_cells + point_objects
+    else:
+        # 沒有RFID框，保留所有其他物件
+        detected_objects = other_objects
     
     # 重新計算類別計數
     class_counts = {'RFID': 0, 'cell': 0, 'point': 0}

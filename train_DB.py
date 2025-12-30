@@ -58,7 +58,7 @@ class TrainConfig:
     WORKERS = 1  # 數據加載線程數
     NAME = 'DB_cell_detection12'  # 訓練結果資料夾名稱
     PROJECT = 'runs'  # 模型儲存路徑
-    PATIENCE = 50  # 早停耐心值（50 個 epoch 無改善才停止，給模型更多訓練機會）
+    PATIENCE = 40  # 早停耐心值（40 個 epoch 無改善才停止，給模型更多訓練機會）
     
     @classmethod
     def get_base_model(cls):

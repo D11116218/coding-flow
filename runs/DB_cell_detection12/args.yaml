@@ -4,7 +4,7 @@ model: yolov12l.pt
 data: DB預處理_dataset.yaml
 epochs: 500
 time: null
-patience: 50
+patience: 40
 batch: 1
 imgsz: 640
 save: true
