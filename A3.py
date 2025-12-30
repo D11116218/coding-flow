@@ -1,5 +1,6 @@
 ﻿#!/home/dssignal/coding-flow/.venv/bin/python3
 # YOLOv12 細胞偵測程式 - 圖片標記
+# 功能：預處理（轉灰階、銳利化、降低雜訊）、信心度過濾、面積過濾、NMS過濾
 
 import os
 import glob
@@ -14,7 +15,7 @@ from ultralytics import YOLO
 # 資料夾路徑
 START_FOLDER = 'start'           # 要標記的圖片資料夾
 FINISH_FOLDER = 'finish'         # 處理完成的圖片資料夾
-PREPROCESSED_FOLDER = '預處理'   # 預處理後的圖片資料夾
+PREPROCESSED_FOLDER_A3 = '預處理A3'  # A3 預處理輸出路徑
 
 # 圖片副檔名
 IMAGE_EXTENSIONS = ['*.jpg', '*.jpeg', '*.png', '*.JPG', '*.JPEG', '*.PNG']
@@ -22,38 +23,40 @@ IMAGE_EXTENSIONS = ['*.jpg', '*.jpeg', '*.png', '*.JPG', '*.JPEG', '*.PNG']
 # YOLO 模型設定
 MODEL_SIZE = 'l'  # 'n' (nano), 's' (small), 'm' (medium), 'l' (large), 'x' (extra large)
 YOLO_MODEL_PATH = f"runs/DB_cell_detection12/weights/best.pt"  # YOLO 訓練好的模型路徑
-IMGSZ = 640  # 圖片尺寸，必須與訓練時一致（train_DB.py 中的 IMGSZ）
+IMGSZ = 640  # 圖片尺寸，必須與訓練時一致（train_DB.py 中的 IMGSZ），統一使用 640（YOLO 標準尺寸，32 的倍數）
 
 # 預處理設定
 USE_PREPROCESSING = True  # True = 使用預處理（與訓練時一致），False = 使用原始圖片
-PREPROCESSED_FOLDER_A3 = '預處裡A3'  # A3 預處理輸出路徑
 
 # 過濾設定
 FILTER_CONFIG = {
-    # 信心度過濾（程式層，類別特定）
-    # 注意：YOLO 模型層使用最低值，然後在程式層進行類別特定的過濾
-    'first_confidence_by_class': {
-        # 降低類別特定的信心度門檻，讓更多檢測結果通過（因模型信心值偏低）
-        'RFID': 0.5,   # RFID 保持較高閾值
-        'cell': 0.01,  # 大幅降低 cell 信心度閾值，讓更多 cell 通過
-        'point': 0.01  # 大幅降低 point 信心度閾值，讓更多 point 通過
+    # 1. 類別信心度過濾（程式層，類別特定）
+    'class_confidence_threshold': {
+        'RFID': 0.01,   # RFID 類別信心度閾值
+        'cell': 0.01,   # cell 類別信心度閾值
+        'point': 0.01   # point 類別信心度閾值
     },
-    # YOLO 模型層使用最低的信心度值
-    'yolo_conf_threshold': 0.001,  # 提高以過濾極低分框，但仍保持較低門檻
-    # NMS（非極大值抑制）數：過濾重疊的檢測框
-    'yolo_iou_threshold': 0.1,   # 降低 YOLO 內建 NMS IoU 閾值，從 0.15 降到 0.1，保留更多檢測框
-    'same_class_nms_threshold': 0.05,  # 進一步降低同類別 NMS IoU 閾值，保留更多重疊的 cell 和 point
-    'cross_class_iou_threshold': 0.7,  # 大幅提高跨類別 NMS IoU 閾值，幾乎不進行跨類別過濾（只過濾高度重疊的框）
-    'rfid_same_class_nms_threshold': 0.1,  # RFID 專用同類別 NMS 閾值（越高越積極過濾）
     
-    # 面積過濾
+    # 2. YOLO信心度閾值（模型層，最低值）
+    'yolo_conf_threshold': 0.001,  # YOLO 模型層使用最低的信心度值
+    
+    # 3. 重疊框過濾（YOLO內建NMS）
+    'yolo_iou_threshold': 0.05,  # YOLO 內建 NMS IoU 閾值，過濾重疊的檢測框
+    
+    # 4. 同類別NMS過濾（程式層，過濾同類別內重疊的框）
+    'same_class_nms_threshold': 0.05,  # 同類別 NMS IoU 閾值
+    'rfid_same_class_nms_threshold': 0.05,  # RFID 專用同類別 NMS 閾值
+    
+    # 5. 跨類別NMS過濾（程式層，過濾不同類別之間重疊的框）
+    'cross_class_iou_threshold': 0.02,  # 跨類別 NMS IoU 閾值
+    
+    # 6. 面積過濾
     'min_area_by_class': {
-        'RFID': 0.001,   # RFID  最小面積比例
-        'cell': 0.001,   # cell  最小面積比例
+        'RFID': 0.001,   # RFID 最小面積比例（相對於圖片大小）
+        'cell': 0.001,   # cell 最小面積比例
         'point': 0.001   # point 最小面積比例
     },
     'max_area_ratio': 0.99,  # 最大面積比例（相對於圖片大小）
-
 }
 
 # 類別顏色設定 (BGR 格式)
@@ -77,7 +80,7 @@ CLASS_ORDER = {
     'point': 2
 }
 
-# 預處理參數（GIMP 風格，與 train_DB.py 保持一致）
+# 預處理參數（與 train_DB.py 保持一致）
 PREPROCESS_PARAMS = {
     # 顏色轉灰階參數
     'grayscale_radius': 300,        # GIMP Radius = 300
@@ -87,7 +90,7 @@ PREPROCESS_PARAMS = {
     
     # 銳利化參數
     'sharpen_radius': 3.0,          # 銳化半徑
-    'sharpen_amount': 2.5,          # 銳化強度
+    'sharpen_amount': 2.5,           # 銳化強度
     'sharpen_threshold': 0.0,       # 銳化閾值
     
     # 降低雜訊參數
@@ -97,13 +100,12 @@ PREPROCESS_PARAMS = {
     
     # 對比度增強參數（用於加深黑點）
     'enhance_contrast': True,        # 是否啟用對比度增強
-    'contrast_alpha': 1.5,           # 對比度係數（1.0 = 無變化，>1.0 = 增強對比度）
+    'contrast_alpha': 1.2,           # 對比度係數（1.0 = 無變化，>1.0 = 增強對比度，<1.0 = 降低對比度）
     'contrast_beta': 0,              # 亮度調整（0 = 無變化）
-    'gamma_correction': 0.8,         # 伽馬校正值（<1.0 = 增強暗部，讓黑點更深）
 }
 
 # ============================================================================
-# 預處理函數
+# 預處理函數（與 train_DB.py 完全一致）
 # ============================================================================
 
 def convert_to_grayscale_gimp(image):
@@ -118,7 +120,7 @@ def convert_to_grayscale_gimp(image):
     返回：
         灰階圖片
     """
-    # 1. 使用 GIMP 亮度公式轉換為灰階
+    # 使用 GIMP 亮度公式轉換為灰階
     b, g, r = cv2.split(image)
     gray = (0.114 * b.astype(np.float32) + 
             0.587 * g.astype(np.float32) + 
@@ -153,7 +155,7 @@ def sharpen_image_unsharp_mask(image, radius, amount, threshold=0.0):
     diff = img_float - blurred
     sharpened = img_float + diff * amount
     
-    # 應用閾值 
+    # 應用閾值
     if threshold > 0:
         # 計算差異的絕對值
         diff_abs = np.abs(diff)
@@ -202,27 +204,10 @@ def enhance_contrast(image, alpha, beta):
     """
     return cv2.convertScaleAbs(image, alpha=alpha, beta=beta)
 
-def apply_gamma_correction(image, gamma):
-    """
-    應用伽馬校正（增強暗部，讓黑點更深）
-    
-    參數：
-        image: 輸入圖片（灰階）
-        gamma: 伽馬值（<1.0 = 增強暗部，>1.0 = 增強亮部）
-    
-    返回：
-        伽馬校正後的圖片
-    """
-    # 建立查找表
-    inv_gamma = 1.0 / gamma
-    table = np.array([((i / 255.0) ** inv_gamma) * 255 for i in range(256)]).astype("uint8")
-    # 應用查找表
-    return cv2.LUT(image, table)
-
 def preprocess_image(image):
     """
     預處理圖片（與 train_DB.py 完全一致）
-    依序使用：顏色轉灰階、銳利化、降低雜訊、對比度增強、伽馬校正
+    依序使用：顏色轉灰階、銳利化、降低雜訊、對比度增強
     
     參數：
         image: 輸入圖片（BGR 格式）
@@ -244,27 +229,20 @@ def preprocess_image(image):
     # 3. 降低雜訊（非局部均值去噪）
     denoised = denoise_image(
         sharpened,
-        PREPROCESS_PARAMS['denoise_h'],  # GIMP 的 Strength 參數
+        PREPROCESS_PARAMS['denoise_h'],
         PREPROCESS_PARAMS['denoise_templateWindowSize'],
         PREPROCESS_PARAMS['denoise_searchWindowSize']
     )
     
     # 4. 對比度增強（加深黑點）
     if PREPROCESS_PARAMS.get('enhance_contrast', False):
-        enhanced = enhance_contrast(
+        final = enhance_contrast(
             denoised,
             PREPROCESS_PARAMS.get('contrast_alpha', 1.5),
             PREPROCESS_PARAMS.get('contrast_beta', 0)
         )
     else:
-        enhanced = denoised
-    
-    # 5. 伽馬校正（進一步增強暗部，讓黑點更深）
-    gamma = PREPROCESS_PARAMS.get('gamma_correction', 1.0)
-    if gamma != 1.0:
-        final = apply_gamma_correction(enhanced, gamma)
-    else:
-        final = enhanced
+        final = denoised
     
     # 與 train_DB.py 一致：預處理並輸出三通道以符合 YOLO 要求
     return cv2.cvtColor(final, cv2.COLOR_GRAY2BGR)
@@ -296,12 +274,24 @@ def ensure_folders():
 # ============================================================================
 
 def detect_objects_yolo(model, detection_image, conf_threshold, iou_threshold):
-    """使用 YOLO 模型偵測物體"""
+    """
+    使用 YOLO 模型偵測物體
+    
+    參數：
+        model: YOLO 模型
+        detection_image: 輸入圖片
+        conf_threshold: YOLO信心度閾值（模型層）
+        iou_threshold: YOLO內建NMS IoU閾值（重疊框過濾）
+    
+    返回：
+        detections: 偵測結果
+        num_boxes: 偵測框數量
+    """
     results = model(
         detection_image, 
-        conf=conf_threshold, 
-        iou=iou_threshold,  # NMS IoU 閾值：過濾重疊的檢測框
-        imgsz=IMGSZ,  # 指定圖片尺寸，必須與訓練時一致
+        conf=conf_threshold,  # YOLO信心度閾值
+        iou=iou_threshold,    # YOLO內建NMS IoU閾值（重疊框過濾）
+        imgsz=IMGSZ,
         verbose=False
     )
     detections = results[0]
@@ -314,13 +304,31 @@ def print_detection_info(detections, num_boxes):
         # 統計各 class_id 的數量與信心度
         class_id_counts = {}
         class_id_confidences = {}
+        all_confidences = []  # 所有信心度
+        
         for box in detections.boxes:
             cls_id = int(box.cls[0].cpu().numpy()) if box.cls is not None else 0
             confidence = float(box.conf[0].cpu().numpy())
             class_id_counts[cls_id] = class_id_counts.get(cls_id, 0) + 1
             class_id_confidences.setdefault(cls_id, []).append(confidence)
+            all_confidences.append(confidence)
+        
+        # 顯示整體信心度統計
+        if all_confidences:
+            print(f"  📊 整體信心度統計:")
+            print(f"    總偵測數: {num_boxes} 個")
+            print(f"    信心度範圍: {min(all_confidences):.4f} ~ {max(all_confidences):.4f}")
+            print(f"    平均信心度: {sum(all_confidences) / len(all_confidences):.4f}")
+            print(f"    中位數信心度: {sorted(all_confidences)[len(all_confidences)//2]:.4f}")
+            
+            # 信心度分佈
+            low_conf = [c for c in all_confidences if c < 0.1]
+            mid_conf = [c for c in all_confidences if 0.1 <= c < 0.5]
+            high_conf = [c for c in all_confidences if c >= 0.5]
+            print(f"    信心度分佈: 低(<0.1): {len(low_conf)} 個, 中(0.1-0.5): {len(mid_conf)} 個, 高(>=0.5): {len(high_conf)} 個")
         
         # 顯示各類別統計
+        print(f"  📋 各類別詳細統計:")
         for cls_id, count in class_id_counts.items():
             class_name = CLASS_MAPPING.get(cls_id, f"class_{cls_id}")
             confs = class_id_confidences.get(cls_id, [])
@@ -328,7 +336,24 @@ def print_detection_info(detections, num_boxes):
                 avg_conf = sum(confs) / len(confs)
                 min_conf = min(confs)
                 max_conf = max(confs)
-                print(f"  {class_name} (class_id={cls_id}): {count} 個, 信心度範圍: {min_conf:.4f} ~ {max_conf:.4f}, 平均: {avg_conf:.4f}")
+                threshold = FILTER_CONFIG['class_confidence_threshold'].get(class_name, 0.01)
+                below_threshold = len([c for c in confs if c < threshold])
+                
+                print(f"    {class_name} (class_id={cls_id}):")
+                print(f"      數量: {count} 個")
+                print(f"      信心度範圍: {min_conf:.4f} ~ {max_conf:.4f}")
+                print(f"      平均信心度: {avg_conf:.4f}")
+                print(f"      設定閾值: {threshold:.4f}")
+                print(f"      低於閾值: {below_threshold} 個 (會被過濾)")
+                
+                # 顯示前5個最低信心度
+                sorted_confs = sorted(confs)
+                if len(sorted_confs) <= 5:
+                    conf_strs = [f"{c:.4f}" for c in sorted_confs]
+                    print(f"      所有信心度: {conf_strs}")
+                else:
+                    conf_strs = [f"{c:.4f}" for c in sorted_confs[:5]]
+                    print(f"      最低5個信心度: {conf_strs}")
     else:
         print(f"  ⚠️  警告：YOLO 沒有偵測到任何物體！")
 
@@ -400,91 +425,114 @@ def is_box_inside(inner_box, outer_box):
             inner_box['y2'] <= outer_box['y2'])
 
 def apply_same_class_nms(detected_objects, iou_threshold):
-    """同類別 NMS：過濾同一類別內重疊的框，保留信心度最高的"""
-    if len(detected_objects) <= 1:
-        return detected_objects
+    """
+    同類別NMS：過濾同類別內重疊的框，保留信心度最高的
+    
+    參數：
+        detected_objects: 偵測物件列表
+        iou_threshold: IoU 閾值
+    
+    返回：
+        過濾後的物件列表
+    """
+    if not detected_objects:
+        return []
     
     # 按類別分組
-    by_class = {}
+    objects_by_class = {}
     for obj in detected_objects:
         class_name = obj['class']
-        if class_name not in by_class:
-            by_class[class_name] = []
-        by_class[class_name].append(obj)
+        if class_name not in objects_by_class:
+            objects_by_class[class_name] = []
+        objects_by_class[class_name].append(obj)
     
-    # 對每個類別分別做 NMS
     result = []
-    for class_name, objects in by_class.items():
-        if len(objects) <= 1:
-            result.extend(objects)
+    # 對每個類別分別進行 NMS
+    for class_name, objects in objects_by_class.items():
+        if len(objects) == 1:
+            result.append(objects[0])
             continue
         
         # 按信心度降序排序
-        sorted_objects = sorted(objects, key=lambda x: x['confidence'], reverse=True)
-        keep = []
+        objects.sort(key=lambda x: x['confidence'], reverse=True)
         
-        while sorted_objects:
-            current = sorted_objects.pop(0)
-            keep_current = True
+        keep = []
+        while objects:
+            current = objects.pop(0)
+            keep.append(current)
             
-            for kept in keep:
-                iou = calculate_iou(current, kept)
-                if iou > iou_threshold:
-                    # 重疊，保留信心度更高的（current 已經排序過，所以 current 信心度更高）
-                    keep_current = False
-                    break
-            
-            if keep_current:
-                keep.append(current)
+            # 移除與 current 重疊度高的框
+            new_objects = []
+            for obj in objects:
+                iou = calculate_iou(current, obj)
+                if iou < iou_threshold:
+                    new_objects.append(obj)
+            objects = new_objects
         
         result.extend(keep)
     
     return result
 
 def apply_cross_class_nms(detected_objects, iou_threshold):
-    """跨類別 NMS，根據信心度決定保留哪個框"""
-    if len(detected_objects) <= 1:
-        return detected_objects
+    """
+    跨類別NMS：過濾不同類別之間重疊的框，根據信心度決定保留哪個
     
-    # 特殊處理：如果 RFID 和 cell 重疊，保留兩者（由後續的 RFID 框內過濾處理）
+    參數：
+        detected_objects: 偵測物件列表
+        iou_threshold: IoU 閾值
+    
+    返回：
+        過濾後的物件列表
+    """
+    if not detected_objects:
+        return []
+    
     # 按信心度降序排序
     sorted_objects = sorted(detected_objects, key=lambda x: x['confidence'], reverse=True)
-    keep = []
     
-    while sorted_objects:
-        # 取出信心度最高的框
-        current = sorted_objects.pop(0)
-        # 與已保留的框做比較，如重疊則依信心度決定保留誰
+    keep = []
+    for current in sorted_objects:
+        # 檢查 current 是否與 keep 中的框重疊（不同類別）
+        should_keep = True
         new_keep = []
-        keep_current = True
+        
         for kept in keep:
-            iou = calculate_iou(current, kept)
-            if iou > iou_threshold:
-                # 特殊處理：如果 RFID 和 cell/point 重疊，保留兩者（由後續的 RFID 框內過濾處理）
-                if (current['class'] == 'RFID' and kept['class'] in ['cell', 'point']) or \
-                   (current['class'] in ['cell', 'point'] and kept['class'] == 'RFID'):
-                    # 保留兩者，不互相過濾
-                    new_keep.append(kept)
-                    continue
-                
-                # 其他情況：根據信心度決定保留哪個框
-                if current['confidence'] > kept['confidence']:
-                    continue  # 丟掉 kept，改保留 current（信心度更高）
-                else:
-                    keep_current = False  # 保留 kept，丟掉 current（kept 信心度更高或相等）
-                    new_keep.append(kept)
-            else:
+            if kept['class'] == current['class']:
+                # 同類別不在此處理（已在同類別NMS中處理）
                 new_keep.append(kept)
+            else:
+                # 不同類別，檢查 IoU
+                iou = calculate_iou(current, kept)
+                if iou >= iou_threshold:
+                    # 重疊度高，保留信心度更高的
+                    # 因為已按降序排序，current 的信心度 >= kept 的信心度
+                    # 所以保留 current，移除 kept（不加入 new_keep）
+                    should_keep = True
+                else:
+                    # 重疊度低，兩個都保留
+                    new_keep.append(kept)
         
-        if keep_current:
-            new_keep.append(current)
-        
-        keep = new_keep
+        if should_keep:
+            keep = new_keep + [current]
+        else:
+            keep = new_keep
     
     return keep
 
 def filter_detections(detections, imgwidth, imgheight):
-    """過濾偵測結果（使用信心度過濾）"""
+    """
+    過濾偵測結果
+    應用：類別信心度過濾、面積過濾
+    
+    參數：
+        detections: YOLO 偵測結果
+        imgwidth: 圖片寬度
+        imgheight: 圖片高度
+    
+    返回：
+        detected_objects: 過濾後的物件列表
+        class_counts: 各類別計數
+    """
     detected_objects = []
     class_counts = {'RFID': 0, 'cell': 0, 'point': 0}
     max_area = imgwidth * imgheight * FILTER_CONFIG['max_area_ratio']
@@ -493,27 +541,91 @@ def filter_detections(detections, imgwidth, imgheight):
     if detections.boxes is None or len(detections.boxes) == 0:
         return detected_objects, class_counts
     
+    filtered_by_confidence = 0
+    filtered_by_area = 0
+    filtered_by_coords = 0
+    filtered_confidence_details = []  # 記錄被信心度過濾的詳細資訊
+    
     for box in detections.boxes:
         obj = parse_detection_box(box, detections, imgwidth, imgheight)
         class_name = obj['class']
         
-        # 獲取過濾條件
+        # 1. 類別信心度過濾
+        class_conf_threshold = FILTER_CONFIG['class_confidence_threshold'].get(class_name, 0.01)
+        if obj['confidence'] < class_conf_threshold:
+            filtered_by_confidence += 1
+            filtered_confidence_details.append({
+                'class': class_name,
+                'confidence': obj['confidence'],
+                'threshold': class_conf_threshold,
+                'diff': class_conf_threshold - obj['confidence']
+            })
+            continue
+        
+        # 2. 面積過濾
         min_area = imgwidth * imgheight * FILTER_CONFIG['min_area_by_class'].get(class_name, 0.001)
-        confidence = FILTER_CONFIG['first_confidence_by_class'].get(class_name, 0.01)
+        if not (min_area <= obj['area'] <= max_area):
+            filtered_by_area += 1
+            continue
         
-        # 驗證條件
-        area_ok = min_area <= obj['area'] <= max_area
-        conf_ok = obj['confidence'] >= confidence
-        coord_ok = (obj['x1'] >= 0 and obj['y1'] >= 0 and 
-                   obj['x2'] > obj['x1'] and obj['y2'] > obj['y1'] and
-                   obj['x2'] <= imgwidth and obj['y2'] <= imgheight and
-                   obj['w'] > 0 and obj['h'] > 0)
+        # 3. 座標驗證（允許稍微超出範圍，因為 YOLO resize 可能導致邊界問題）
+        # 將座標限制在圖片範圍內
+        obj['x1'] = max(0, min(obj['x1'], imgwidth - 1))
+        obj['y1'] = max(0, min(obj['y1'], imgheight - 1))
+        obj['x2'] = max(obj['x1'] + 1, min(obj['x2'], imgwidth))
+        obj['y2'] = max(obj['y1'] + 1, min(obj['y2'], imgheight))
+        obj['w'] = obj['x2'] - obj['x1']
+        obj['h'] = obj['y2'] - obj['y1']
+        obj['area'] = obj['w'] * obj['h']  # 重新計算面積
+        obj['cx'] = obj['x1'] + obj['w'] // 2  # 重新計算中心點
+        obj['cy'] = obj['y1'] + obj['h'] // 2
         
-        # 如果通過過濾，加入結果
-        if area_ok and conf_ok and coord_ok:
-            detected_objects.append(obj)
-            if class_name in class_counts:
-                class_counts[class_name] += 1
+        # 驗證基本有效性
+        if not (obj['x1'] >= 0 and obj['y1'] >= 0 and 
+                obj['x2'] > obj['x1'] and obj['y2'] > obj['y1'] and
+                obj['w'] > 0 and obj['h'] > 0):
+            filtered_by_coords += 1
+            continue
+        
+        # 通過所有過濾條件
+        detected_objects.append(obj)
+        if class_name in class_counts:
+            class_counts[class_name] += 1
+    
+    # 輸出過濾統計（僅在有多個檢測框時顯示）
+    if len(detections.boxes) > 0:
+        if filtered_by_confidence > 0:
+            print(f"  ⚠️  信心度過濾: {filtered_by_confidence} 個")
+            # 顯示被過濾的信心度詳細資訊
+            if len(filtered_confidence_details) > 0:
+                print(f"     被過濾的信心度詳細資訊:")
+                # 按類別分組
+                by_class = {}
+                for detail in filtered_confidence_details:
+                    class_name = detail['class']
+                    if class_name not in by_class:
+                        by_class[class_name] = []
+                    by_class[class_name].append(detail)
+                
+                for class_name, details in by_class.items():
+                    confs = [d['confidence'] for d in details]
+                    threshold = details[0]['threshold']
+                    print(f"       {class_name}: {len(details)} 個 (閾值: {threshold:.4f})")
+                    print(f"         信心度範圍: {min(confs):.4f} ~ {max(confs):.4f}")
+                    print(f"         平均信心度: {sum(confs)/len(confs):.4f}")
+                    print(f"         與閾值差距: {threshold - max(confs):.4f} ~ {threshold - min(confs):.4f}")
+                    # 顯示最低的幾個
+                    sorted_details = sorted(details, key=lambda x: x['confidence'])
+                    if len(sorted_details) <= 3:
+                        conf_strs = [f"{d['confidence']:.4f}" for d in sorted_details]
+                        print(f"         所有被過濾的信心度: {conf_strs}")
+                    else:
+                        conf_strs = [f"{d['confidence']:.4f}" for d in sorted_details[:3]]
+                        print(f"         最低3個信心度: {conf_strs}")
+        if filtered_by_area > 0:
+            print(f"  過濾統計 - 面積過濾: {filtered_by_area} 個")
+        if filtered_by_coords > 0:
+            print(f"  過濾統計 - 座標驗證: {filtered_by_coords} 個")
     
     return detected_objects, class_counts
 
@@ -615,106 +727,35 @@ def process_image(image_path, model):
     
     # 預處理（如果需要）
     if USE_PREPROCESSING:
-        print(f"  正在預處理圖片...")
+        print(f"  正在預處理圖片（轉灰階、銳利化、降低雜訊）...")
         detection_image = preprocess_image(image_src)
         
-        # 儲存預處理後的圖片到「預處裡A3」資料夾（BGR 三通道）
+        # 儲存預處理後的圖片到「預處理A3」資料夾
         preprocessed_path_a3 = os.path.join(PREPROCESSED_FOLDER_A3, os.path.basename(image_path))
         cv2.imwrite(preprocessed_path_a3, detection_image)
     else:
         detection_image = image_src
     
-    # 使用 YOLO 模型進行偵測
-    # 對於 RFID，使用更低的 NMS 閾值以保留更多候選框
+    # 1. 使用 YOLO 模型進行偵測（YOLO信心度閾值、重疊框過濾）
+    print(f"  🔍 YOLO 偵測設定:")
+    print(f"    模型層信心度閾值: {FILTER_CONFIG['yolo_conf_threshold']:.4f}")
+    print(f"    程式層類別信心度閾值:")
+    for class_name, threshold in FILTER_CONFIG['class_confidence_threshold'].items():
+        print(f"      {class_name}: {threshold:.4f}")
+    
     detections, num_boxes = detect_objects_yolo(
         model, 
         detection_image, 
-        FILTER_CONFIG['yolo_conf_threshold'],
-        FILTER_CONFIG['yolo_iou_threshold']
+        FILTER_CONFIG['yolo_conf_threshold'],      # YOLO信心度閾值
+        FILTER_CONFIG['yolo_iou_threshold']        # YOLO內建NMS（重疊框過濾）
     )
     print_detection_info(detections, num_boxes)
     
-    # 診斷：顯示所有原始偵測結果（在過濾前）
-    if detections.boxes is not None and len(detections.boxes) > 0:
-        # 統計各類別的原始偵測數量
-        raw_counts = {'RFID': 0, 'cell': 0, 'point': 0}
-        raw_confidences = {'RFID': [], 'cell': [], 'point': []}
-        for box in detections.boxes:
-            cls_id = int(box.cls[0].cpu().numpy()) if box.cls is not None else 0
-            conf = float(box.conf[0].cpu().numpy())
-            class_name = CLASS_MAPPING.get(cls_id, f"class_{cls_id}")
-            if class_name in raw_counts:
-                raw_counts[class_name] += 1
-                raw_confidences[class_name].append(conf)
-        
-        print(f"  🔍 原始 YOLO 偵測結果（過濾前）:")
-        for class_name in ['RFID', 'cell', 'point']:
-            if raw_counts[class_name] > 0:
-                confs = raw_confidences[class_name]
-                avg_conf = sum(confs) / len(confs)
-                min_conf = min(confs)
-                max_conf = max(confs)
-                print(f"    {class_name}: {raw_counts[class_name]} 個, 信心度範圍: {min_conf:.4f} ~ {max_conf:.4f}, 平均: {avg_conf:.4f}")
-    
-    # 過濾偵測結果
+    # 2. 過濾偵測結果（類別信心度過濾、面積過濾）
     detected_objects, class_counts = filter_detections(detections, imgwidth, imgheight)
-    print(f"  程式層信心度過濾後 - RFID: {class_counts['RFID']}, cell: {class_counts['cell']}, point: {class_counts['point']}")
+    print(f"  類別信心度過濾 + 面積過濾後 - RFID: {class_counts['RFID']}, cell: {class_counts['cell']}, point: {class_counts['point']}")
     
-    # 診斷：顯示過濾後的 cell 和 point 詳細資訊
-    cell_after_filter = [obj for obj in detected_objects if obj['class'] == 'cell']
-    point_after_filter = [obj for obj in detected_objects if obj['class'] == 'point']
-    if len(cell_after_filter) > 0:
-        print(f"  🔍 過濾後的 cell（共 {len(cell_after_filter)} 個）:")
-        for i, cell in enumerate(cell_after_filter[:5]):  # 只顯示前 5 個
-            print(f"    [{i+1}] conf={cell['confidence']:.4f}, pos=({cell['x1']},{cell['y1']}), size={cell['w']}x{cell['h']}")
-    if len(point_after_filter) > 0:
-        print(f"  🔍 過濾後的 point（共 {len(point_after_filter)} 個）:")
-        for i, point in enumerate(point_after_filter[:5]):  # 只顯示前 5 個
-            print(f"    [{i+1}] conf={point['confidence']:.4f}, pos=({point['x1']},{point['y1']}), size={point['w']}x{point['h']}")
-    
-    # 診斷：顯示被過濾掉的 cell 和 point（信心度不足）
-    if detections.boxes is not None and len(detections.boxes) > 0:
-        filtered_cells = []
-        filtered_points = []
-        for box in detections.boxes:
-            cls_id = int(box.cls[0].cpu().numpy()) if box.cls is not None else 0
-            conf = float(box.conf[0].cpu().numpy())
-            class_name = CLASS_MAPPING.get(cls_id, f"class_{cls_id}")
-            min_conf = FILTER_CONFIG['first_confidence_by_class'].get(class_name, 0.01)
-            
-            if class_name == 'cell' and conf < min_conf:
-                filtered_cells.append(conf)
-            elif class_name == 'point' and conf < min_conf:
-                filtered_points.append(conf)
-        
-        if len(filtered_cells) > 0:
-            print(f"  ⚠️  有 {len(filtered_cells)} 個 cell 因信心度 < {FILTER_CONFIG['first_confidence_by_class']['cell']} 被過濾")
-            if len(filtered_cells) <= 5:
-                print(f"    被過濾的 cell 信心度: {[f'{c:.4f}' for c in filtered_cells]}")
-        if len(filtered_points) > 0:
-            print(f"  ⚠️  有 {len(filtered_points)} 個 point 因信心度 < {FILTER_CONFIG['first_confidence_by_class']['point']} 被過濾")
-            if len(filtered_points) <= 5:
-                print(f"    被過濾的 point 信心度: {[f'{c:.4f}' for c in filtered_points]}")
-    
-    # 診斷：顯示過濾後的 RFID 候選框
-    rfid_after_filter = [obj for obj in detected_objects if obj['class'] == 'RFID']
-    if len(rfid_after_filter) > 0:
-        print(f"  🔍 過濾後的 RFID 候選框（共 {len(rfid_after_filter)} 個）:")
-        for i, rfid in enumerate(rfid_after_filter):
-            print(f"    [{i+1}] conf={rfid['confidence']:.3f}, pos=({rfid['x1']},{rfid['y1']}), size={rfid['w']}x{rfid['h']}")
-    
-    # 診斷：檢查 cell 框之間的重疊情況
-    cell_objects = [obj for obj in detected_objects if obj['class'] == 'cell']
-    if len(cell_objects) > 1:
-        print(f"  🔍 檢查 {len(cell_objects)} 個 cell 框的重疊情況：")
-        for i, obj1 in enumerate(cell_objects):
-            for j, obj2 in enumerate(cell_objects[i+1:], start=i+1):
-                iou = calculate_iou(obj1, obj2)
-                if iou > 0.3:  # 顯示 IoU > 0.3 的重疊
-                    print(f"    cell {i+1} (conf={obj1['confidence']:.2f}) 與 cell {j+1} (conf={obj2['confidence']:.2f}) IoU={iou:.3f}")
-    
-    # 程式層同類別 NMS：針對同類別內的重疊框再做一次過濾
-    # 對 RFID 使用更寬鬆的 NMS 閾值，保留更多候選框
+    # 3. 同類別NMS過濾
     before_same_nms = len(detected_objects)
     before_same_nms_by_class = {'RFID': 0, 'cell': 0, 'point': 0}
     for obj in detected_objects:
@@ -722,13 +763,13 @@ def process_image(image_path, model):
             before_same_nms_by_class[obj['class']] += 1
     
     # 分開處理 RFID 和其他類別
-    rfid_objects_before_nms = [obj for obj in detected_objects if obj['class'] == 'RFID']
-    other_objects_before_nms = [obj for obj in detected_objects if obj['class'] != 'RFID']
+    rfid_objects = [obj for obj in detected_objects if obj['class'] == 'RFID']
+    other_objects = [obj for obj in detected_objects if obj['class'] != 'RFID']
     
-    # RFID 使用更寬鬆的 NMS
-    rfid_after_nms = apply_same_class_nms(rfid_objects_before_nms, FILTER_CONFIG['rfid_same_class_nms_threshold'])
-    # 其他類別使用標準 NMS
-    other_after_nms = apply_same_class_nms(other_objects_before_nms, FILTER_CONFIG['same_class_nms_threshold'])
+    # RFID 使用專用 NMS 閾值
+    rfid_after_nms = apply_same_class_nms(rfid_objects, FILTER_CONFIG['rfid_same_class_nms_threshold'])
+    # 其他類別使用標準 NMS 閾值
+    other_after_nms = apply_same_class_nms(other_objects, FILTER_CONFIG['same_class_nms_threshold'])
     
     detected_objects = rfid_after_nms + other_after_nms
     after_same_nms = len(detected_objects)
@@ -738,13 +779,13 @@ def process_image(image_path, model):
             after_same_nms_by_class[obj['class']] += 1
     
     if before_same_nms != after_same_nms:
-        print(f"  同類別 NMS 過濾掉 {before_same_nms - after_same_nms} 個重疊框")
+        print(f"  同類別NMS過濾掉 {before_same_nms - after_same_nms} 個重疊框")
         for class_name in ['RFID', 'cell', 'point']:
             removed = before_same_nms_by_class[class_name] - after_same_nms_by_class[class_name]
             if removed > 0:
                 print(f"    - {class_name}: {before_same_nms_by_class[class_name]} -> {after_same_nms_by_class[class_name]} (移除 {removed} 個)")
     
-    # 應用跨類別 NMS，過濾不同類別之間重疊的框（如 cell 和 point）
+    # 4. 跨類別NMS過濾
     before_cross_nms_count = len(detected_objects)
     before_cross_nms_by_class = {'RFID': 0, 'cell': 0, 'point': 0}
     for obj in detected_objects:
@@ -762,153 +803,11 @@ def process_image(image_path, model):
             after_cross_nms_by_class[obj['class']] += 1
     
     if before_cross_nms_count != after_cross_nms_count:
-        print(f"  跨類別 NMS 過濾掉 {before_cross_nms_count - after_cross_nms_count} 個框 (IoU threshold: {FILTER_CONFIG['cross_class_iou_threshold']})")
+        print(f"  跨類別NMS過濾掉 {before_cross_nms_count - after_cross_nms_count} 個框 (IoU threshold: {FILTER_CONFIG['cross_class_iou_threshold']})")
         for class_name in ['RFID', 'cell', 'point']:
             removed = before_cross_nms_by_class[class_name] - after_cross_nms_by_class[class_name]
             if removed > 0:
                 print(f"    - {class_name}: {before_cross_nms_by_class[class_name]} -> {after_cross_nms_by_class[class_name]} (移除 {removed} 個)")
-    else:
-        print(f"  跨類別 NMS 未過濾任何框 (IoU threshold: {FILTER_CONFIG['cross_class_iou_threshold']})")
-    
-    # 針對 RFID 選擇最佳的一個（考慮信心度和位置）
-    rfid_objects = [obj for obj in detected_objects if obj['class'] == 'RFID']
-    other_objects = [obj for obj in detected_objects if obj['class'] != 'RFID']
-    
-    if len(rfid_objects) > 1:
-        # RFID 選擇策略：綜合考慮信心度、位置和大小
-        # 優先選擇：信心度高 + 位置合理（靠近邊緣或中心區域）+ 長寬比合理
-        def rfid_score(obj):
-            """計算 RFID 的綜合分數"""
-            conf_score = obj['confidence']  # 信心度權重
-            
-            # 位置分數：RFID 通常在圖片邊緣或特定位置
-            # 計算距離圖片邊緣的距離（越小越好）
-            edge_dist = min(
-                obj['x1'], obj['y1'], 
-                imgwidth - obj['x2'], 
-                imgheight - obj['y2']
-            )
-            # 標準化到 0-1（假設圖片邊緣 10% 區域是 RFID 常見位置）
-            edge_score = max(0, 1 - edge_dist / (min(imgwidth, imgheight) * 0.1))
-            
-            # 長寬比分數：RFID 通常是矩形，長寬比約 2:1 到 4:1
-            aspect_ratio = max(obj['w'], obj['h']) / max(min(obj['w'], obj['h']), 1)
-            aspect_score = 1.0 if 1.5 <= aspect_ratio <= 5.0 else max(0, 1 - abs(aspect_ratio - 3) / 3)
-            
-            # 綜合分數：信心度 70%，位置 20%，長寬比 10%
-            return conf_score * 0.7 + edge_score * 0.2 + aspect_score * 0.1
-        
-        # 按綜合分數排序
-        rfid_objects.sort(key=rfid_score, reverse=True)
-        kept_rfid = rfid_objects[0]
-        removed_count = len(rfid_objects) - 1
-        
-        # 顯示所有候選 RFID 的資訊
-        print(f"  RFID 候選框 ({len(rfid_objects)} 個):")
-        for i, rfid in enumerate(rfid_objects[:3]):  # 只顯示前 3 個
-            score = rfid_score(rfid)
-            print(f"    [{i+1}] conf={rfid['confidence']:.3f}, pos=({rfid['x1']},{rfid['y1']}), size={rfid['w']}x{rfid['h']}, score={score:.3f}")
-        
-        print(f"  RFID 選擇：保留分數最高的 (conf={kept_rfid['confidence']:.4f}, pos=({kept_rfid['x1']},{kept_rfid['y1']}))，移除 {removed_count} 個")
-        detected_objects = [kept_rfid] + other_objects
-    elif len(rfid_objects) == 1:
-        # 只有一個 RFID，檢查是否需要位置修正
-        rfid = rfid_objects[0]
-        center_x, center_y = imgwidth // 2, imgheight // 2
-        rfid_center_x, rfid_center_y = rfid['cx'], rfid['cy']
-        dist_from_center = ((rfid_center_x - center_x)**2 + (rfid_center_y - center_y)**2)**0.5
-        max_dist = ((imgwidth/2)**2 + (imgheight/2)**2)**0.5
-        
-        # 檢查原始 YOLO 偵測結果中是否有其他 RFID 候選框被過濾掉了
-        # 如果當前 RFID 位置不合理，嘗試從原始結果中尋找更好的候選框
-        if dist_from_center / max_dist < 0.3:  # 如果 RFID 太靠近中心
-            print(f"  ⚠️  RFID 位置警告：RFID 位於圖片中心附近 (距離中心 {dist_from_center/max_dist*100:.1f}%)")
-            print(f"  🔍 嘗試從原始 YOLO 結果中尋找其他 RFID 候選框...")
-            
-            # 從原始 detections 中尋找所有 RFID（即使信心度較低）
-            alternative_rfids = []
-            if detections.boxes is not None:
-                for box in detections.boxes:
-                    cls_id = int(box.cls[0].cpu().numpy()) if box.cls is not None else 0
-                    if cls_id == 0:  # RFID
-                        conf = float(box.conf[0].cpu().numpy())
-                        x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-                        x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-                        
-                        # 計算位置分數（距離邊緣越近越好）
-                        edge_dist = min(x1, y1, imgwidth - x2, imgheight - y2)
-                        edge_score = max(0, 1 - edge_dist / (min(imgwidth, imgheight) * 0.1))
-                        
-                        # 如果這個候選框位置更好（更靠近邊緣），且信心度 > 0.3
-                        if edge_score > 0.5 and conf > 0.3:
-                            alt_rfid = parse_detection_box(box, detections, imgwidth, imgheight)
-                            alternative_rfids.append((alt_rfid, conf, edge_score))
-            
-            if len(alternative_rfids) > 0:
-                # 按位置分數排序，選擇位置最好的
-                alternative_rfids.sort(key=lambda x: x[2], reverse=True)
-                best_alt = alternative_rfids[0][0]
-                print(f"  ✓ 找到更好的 RFID 候選框：conf={alternative_rfids[0][1]:.3f}, pos=({best_alt['x1']},{best_alt['y1']}), edge_score={alternative_rfids[0][2]:.3f}")
-                rfid_objects = [best_alt]
-            else:
-                print(f"  ℹ️  未找到更好的 RFID 候選框，使用當前偵測結果")
-        
-        detected_objects = rfid_objects + other_objects
-    else:
-        detected_objects = rfid_objects + other_objects
-    
-    # 過濾：移除 RFID 框內的 cell 和 point
-    # 重新從 detected_objects 中提取 RFID（確保使用最終選擇的 RFID）
-    rfid_objects = [obj for obj in detected_objects if obj['class'] == 'RFID']
-    if len(rfid_objects) > 0:
-        rfid_box = rfid_objects[0]  # 使用保留的 RFID 框
-        before_rfid_filter = len(detected_objects)
-        
-        # 過濾條件：移除完全在 RFID 框內的，或中心點在 RFID 框內的 cell/point
-        def should_remove(obj):
-            """判斷是否應該移除這個物件"""
-            if obj['class'] == 'RFID':
-                return False  # 不移除 RFID 本身
-            
-            # 檢查 1：是否完全在 RFID 框內
-            if is_box_inside(obj, rfid_box):
-                return True
-            
-            # 檢查 2：中心點是否在 RFID 框內（處理部分重疊的情況）
-            cx_in = rfid_box['x1'] <= obj['cx'] <= rfid_box['x2']
-            cy_in = rfid_box['y1'] <= obj['cy'] <= rfid_box['y2']
-            if cx_in and cy_in:
-                return True
-            
-            # 檢查 3：計算 IoU，如果 IoU > 0.5 則認為重疊太多，應該移除（降低閾值，保留更多 cell 和 point）
-            iou = calculate_iou(obj, rfid_box)
-            if iou > 0.5:
-                return True
-            
-            return False
-        
-        before_rfid_filter_by_class = {'RFID': 0, 'cell': 0, 'point': 0}
-        for obj in detected_objects:
-            if obj['class'] in before_rfid_filter_by_class:
-                before_rfid_filter_by_class[obj['class']] += 1
-        
-        detected_objects = [
-            obj for obj in detected_objects 
-            if not should_remove(obj)
-        ]
-        after_rfid_filter = len(detected_objects)
-        after_rfid_filter_by_class = {'RFID': 0, 'cell': 0, 'point': 0}
-        for obj in detected_objects:
-            if obj['class'] in after_rfid_filter_by_class:
-                after_rfid_filter_by_class[obj['class']] += 1
-        
-        removed_count = before_rfid_filter - after_rfid_filter
-        if removed_count > 0:
-            print(f"  RFID 框內過濾：移除 {removed_count} 個在 RFID 框內的 cell/point 標記")
-            for class_name in ['cell', 'point']:
-                removed = before_rfid_filter_by_class[class_name] - after_rfid_filter_by_class[class_name]
-                if removed > 0:
-                    print(f"    - {class_name}: {before_rfid_filter_by_class[class_name]} -> {after_rfid_filter_by_class[class_name]} (移除 {removed} 個)")
     
     # 重新計算類別計數
     class_counts = {'RFID': 0, 'cell': 0, 'point': 0}
@@ -917,7 +816,7 @@ def process_image(image_path, model):
         if class_name in class_counts:
             class_counts[class_name] += 1
     
-    print(f"  過濾後結果 - RFID: {class_counts['RFID']}, cell: {class_counts['cell']}, point: {class_counts['point']} (原始偵測: {num_boxes} 個)")
+    print(f"  最終結果 - RFID: {class_counts['RFID']}, cell: {class_counts['cell']}, point: {class_counts['point']} (原始偵測: {num_boxes} 個)")
     
     # 在圖片上標記
     image = image_src.copy()
@@ -938,6 +837,15 @@ def main():
     model_size_name = {'n': 'nano', 's': 'small', 'm': 'medium', 'l': 'large', 'x': 'extra large'}.get(MODEL_SIZE, 'extra large')
     print(f"YOLOv12{MODEL_SIZE.upper()} ({model_size_name}) 細胞偵測 - 圖片標記")
     print("=" * 60)
+    print("過濾功能：")
+    print("  1. 類別信心度過濾")
+    print("  2. YOLO信心度閾值")
+    print("  3. 重疊框過濾（YOLO內建NMS）")
+    print("  4. 同類別NMS過濾")
+    print("  5. 跨類別NMS過濾")
+    print("  6. 面積過濾")
+    print("預處理：轉灰階、銳利化、降低雜訊（與 train_DB.py 一致）")
+    print("=" * 60)
     
     # 確保資料夾存在
     ensure_folders()
@@ -954,7 +862,6 @@ def main():
     print("=" * 60)
     
     # 載入 YOLO 模型
-    model_size_name = {'n': 'nano', 's': 'small', 'm': 'medium', 'l': 'large', 'x': 'extra large'}.get(MODEL_SIZE, 'extra large')
     print(f"正在載入 YOLOv12{MODEL_SIZE.upper()} ({model_size_name}) 模型...")
     try:
         model = YOLO(YOLO_MODEL_PATH)
@@ -976,3 +883,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
