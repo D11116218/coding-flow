@@ -257,7 +257,7 @@ def preprocess_image(image):
     if PREPROCESS_PARAMS.get('enhance_contrast', False):
         final = enhance_contrast(
             denoised,
-            PREPROCESS_PARAMS.get('contrast_alpha', 1.5),
+            PREPROCESS_PARAMS['contrast_alpha'],  # 使用參數定義的值（1.2）
             PREPROCESS_PARAMS.get('contrast_beta', 0)
         )
     else:

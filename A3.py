@@ -33,28 +33,28 @@ FILTER_CONFIG = {
     # 1. 類別信心度過濾（程式層，類別特定）
     'class_confidence_threshold': {
         'RFID': 0.01,   # RFID 類別信心度閾值
-        'cell': 0.01,   # cell 類別信心度閾值
+        'cell': 0.075,   # cell 類別信心度閾值
         'point': 0.01   # point 類別信心度閾值
     },
     
     # 2. YOLO信心度閾值（模型層，最低值）
     'yolo_conf_threshold': 0.001,  # YOLO 模型層使用最低的信心度值
     
-    # 3. 重疊框過濾（YOLO內建NMS）
-    'yolo_iou_threshold': 0.05,  # YOLO 內建 NMS IoU 閾值，過濾重疊的檢測框
+    # 3. 重疊框過濾（參數越低越嚴格)
+    'yolo_iou_threshold': 0.04,  # YOLO 內建 NMS IoU 閾值，過濾重疊的檢測框
     
-    # 4. 同類別NMS過濾（程式層，過濾同類別內重疊的框）
-    'same_class_nms_threshold': 0.05,  # 同類別 NMS IoU 閾值
+    # 4. 同類別NMS過濾（參數越低越嚴格)
+    'same_class_nms_threshold': 0.02,  # 同類別 NMS IoU 閾值
     'rfid_same_class_nms_threshold': 0.05,  # RFID 專用同類別 NMS 閾值
     
-    # 5. 跨類別NMS過濾（程式層，過濾不同類別之間重疊的框）
+    # 5. 跨類別NMS過濾（參數越低越嚴格)
     'cross_class_iou_threshold': 0.02,  # 跨類別 NMS IoU 閾值
     
     # 6. 面積過濾
     'min_area_by_class': {
-        'RFID': 0.001,   # RFID 最小面積比例（相對於圖片大小）
-        'cell': 0.001,   # cell 最小面積比例
-        'point': 0.001   # point 最小面積比例
+        'RFID': 0.0001,   # RFID 最小面積比例（相對於圖片大小，降低：從 0.001 降到 0.0001）
+        'cell': 0.0001,   # cell 最小面積比例（降低：從 0.001 降到 0.0001）
+        'point': 0.0001   # point 最小面積比例（降低：從 0.001 降到 0.0001）
     },
     'max_area_ratio': 0.99,  # 最大面積比例（相對於圖片大小）
 }
@@ -238,7 +238,7 @@ def preprocess_image(image):
     if PREPROCESS_PARAMS.get('enhance_contrast', False):
         final = enhance_contrast(
             denoised,
-            PREPROCESS_PARAMS.get('contrast_alpha', 1.5),
+            PREPROCESS_PARAMS['contrast_alpha'],  # 使用參數定義的值（1.2）
             PREPROCESS_PARAMS.get('contrast_beta', 0)
         )
     else:
