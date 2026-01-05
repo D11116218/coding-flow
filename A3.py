@@ -1,7 +1,4 @@
-﻿#!/home/dssignal/coding-flow/.venv/bin/python3
-# YOLOv12 細胞偵測程式 - 圖片標記
-# 功能：預處理（轉灰階、銳利化、降低雜訊）、信心度過濾、面積過濾、NMS過濾
-
+﻿
 import os
 import glob
 import cv2
@@ -21,9 +18,9 @@ PREPROCESSED_FOLDER_A3 = '預處理A3'  # A3 預處理輸出路徑
 IMAGE_EXTENSIONS = ['*.jpg', '*.jpeg', '*.png', '*.JPG', '*.JPEG', '*.PNG']
 
 # YOLO 模型設定
-MODEL_SIZE = 'l'  # 'n' (nano), 's' (small), 'm' (medium), 'l' (large), 'x' (extra large)
-YOLO_MODEL_PATH = f"runs/DB_cell_detection12/weights/best.pt"  # YOLO 訓練好的模型路徑
-IMGSZ = 640  # 圖片尺寸，必須與訓練時一致（train_DB.py 中的 IMGSZ），統一使用 640（YOLO 標準尺寸，32 的倍數）
+MODEL_SIZE = 'l'  # 'n'、's'、'm' 、'l'、'x'
+YOLO_MODEL_PATH = f"runs/DB_cell_detection12/weights/best.pt"
+IMGSZ = 640  # 圖片尺寸，與訓練時一致
 
 # 預處理設定
 USE_PREPROCESSING = True  # True = 使用預處理（與訓練時一致），False = 使用原始圖片
@@ -33,8 +30,8 @@ FILTER_CONFIG = {
     # 1. 類別信心度過濾（程式層，類別特定）
     'class_confidence_threshold': {
         'RFID': 0.6,   # RFID 類別信心度閾值
-        'cell': 0.075,   # cell 類別信心度閾值
-        'point': 0.19   # point 類別信心度閾值
+        'cell': 0.2,   # cell 類別信心度閾值
+        'point': 0.18   # point 類別信心度閾值
     },
     
     # 2. YOLO信心度閾值（模型層，最低值）
@@ -53,10 +50,18 @@ FILTER_CONFIG = {
     # 6. 面積過濾
     'min_area_by_class': {
         'RFID': 0.0001,   # RFID 最小面積比例（相對於圖片大小，降低：從 0.001 降到 0.0001）
-        'cell': 0.0001,   # cell 最小面積比例（降低：從 0.001 降到 0.0001）
+        'cell': 0.00001,   # cell 最小面積比例（降低：從 0.001 降到 0.0001）
         'point': 0.0001   # point 最小面積比例（降低：從 0.001 降到 0.0001）
     },
     'max_area_ratio': 0.99,  # 最大面積比例（相對於圖片大小）
+    
+    # 7. RFID框擴展設定（確保邊邊角角都被框到）
+    'rfid_expand': {
+        'enabled': True,           # 是否啟用RFID框擴展
+        'expand_ratio': 0.06,       # 擴展比例（6%，即每邊擴展3%，稍微增加以確保邊角）
+        'min_expand_pixels': 4,     # 最小擴展像素數
+        'max_expand_pixels': 18,    # 最大擴展像素數
+    },
 }
 
 # 類別顏色設定 (BGR 格式)
@@ -90,7 +95,7 @@ PREPROCESS_PARAMS = {
     
     # 銳利化參數
     'sharpen_radius': 3.0,          # 銳化半徑
-    'sharpen_amount': 1.5,           # 銳化強度（降低：從 2.5 降到 1.5，與 train_DB.py 一致）
+    'sharpen_amount': 1.5,           # 銳化強度
     'sharpen_threshold': 0.0,       # 銳化閾值
     
     # 降低雜訊參數
@@ -104,10 +109,8 @@ PREPROCESS_PARAMS = {
     'contrast_beta': 0,              # 亮度調整（0 = 無變化）
 }
 
-# ============================================================================
-# 預處理函數（與 train_DB.py 完全一致）
-# ============================================================================
 
+# 預處理函數
 def convert_to_grayscale_gimp(image):
     """
     使用 GIMP 亮度方法轉換為灰階
@@ -423,6 +426,53 @@ def is_box_inside(inner_box, outer_box):
             inner_box['y1'] >= outer_box['y1'] and 
             inner_box['x2'] <= outer_box['x2'] and 
             inner_box['y2'] <= outer_box['y2'])
+
+def expand_rfid_box(rfid_obj, imgwidth, imgheight):
+    """
+    擴展RFID框，確保邊邊角角都被框到
+    
+    參數：
+        rfid_obj: RFID物件（字典，包含 x1, y1, x2, y2, w, h, area, cx, cy）
+        imgwidth: 圖片寬度
+        imgheight: 圖片高度
+    
+    返回：
+        擴展後的RFID物件（更新座標、尺寸、面積、中心點）
+    """
+    if not FILTER_CONFIG['rfid_expand']['enabled']:
+        return rfid_obj
+    
+    expand_config = FILTER_CONFIG['rfid_expand']
+    expand_ratio = expand_config['expand_ratio']
+    min_expand = expand_config['min_expand_pixels']
+    max_expand = expand_config['max_expand_pixels']
+    
+    # 計算當前框的寬度和高度
+    w = rfid_obj['w']
+    h = rfid_obj['h']
+    
+    # 計算擴展量（按比例，但限制在最小和最大像素數之間）
+    expand_w = max(min_expand, min(max_expand, int(w * expand_ratio / 2)))
+    expand_h = max(min_expand, min(max_expand, int(h * expand_ratio / 2)))
+    
+    # 擴展座標（每邊擴展）
+    new_x1 = max(0, rfid_obj['x1'] - expand_w)
+    new_y1 = max(0, rfid_obj['y1'] - expand_h)
+    new_x2 = min(imgwidth, rfid_obj['x2'] + expand_w)
+    new_y2 = min(imgheight, rfid_obj['y2'] + expand_h)
+    
+    # 更新物件資訊
+    rfid_obj['x1'] = new_x1
+    rfid_obj['y1'] = new_y1
+    rfid_obj['x2'] = new_x2
+    rfid_obj['y2'] = new_y2
+    rfid_obj['w'] = new_x2 - new_x1
+    rfid_obj['h'] = new_y2 - new_y1
+    rfid_obj['area'] = rfid_obj['w'] * rfid_obj['h']
+    rfid_obj['cx'] = new_x1 + rfid_obj['w'] // 2
+    rfid_obj['cy'] = new_y1 + rfid_obj['h'] // 2
+    
+    return rfid_obj
 
 def apply_same_class_nms(detected_objects, iou_threshold):
     """
@@ -906,9 +956,20 @@ def process_image(image_path, model):
     else:
         print(f"  RFID過濾：未偵測到RFID標記")
     
+    # 5.5. RFID框擴展（確保邊邊角角都被框到）
+    if len(rfid_objects) > 0 and FILTER_CONFIG['rfid_expand']['enabled']:
+        original_box = rfid_objects[0].copy()
+        rfid_objects[0] = expand_rfid_box(rfid_objects[0], imgwidth, imgheight)
+        expand_info = FILTER_CONFIG['rfid_expand']
+        print(f"  RFID框擴展：")
+        print(f"    原始尺寸: {original_box['w']}x{original_box['h']}")
+        print(f"    擴展後尺寸: {rfid_objects[0]['w']}x{rfid_objects[0]['h']}")
+        print(f"    擴展比例: {expand_info['expand_ratio']*100:.1f}% (每邊 {expand_info['expand_ratio']*50:.1f}%)")
+        print(f"    擴展像素: 寬度 +{rfid_objects[0]['w'] - original_box['w']}, 高度 +{rfid_objects[0]['h'] - original_box['h']}")
+    
     # 6. 刪除RFID框內信心度低於0.05的cell和point
     if len(rfid_objects) > 0:
-        rfid_box = rfid_objects[0]  # 使用唯一的RFID框
+        rfid_box = rfid_objects[0]  # 使用唯一的RFID框（已擴展）
         cell_objects = [obj for obj in other_objects if obj['class'] == 'cell']
         point_objects = [obj for obj in other_objects if obj['class'] == 'point']
         
@@ -918,7 +979,7 @@ def process_image(image_path, model):
             # 檢查cell是否在RFID框內
             if is_box_inside(cell_obj, rfid_box):
                 # 在RFID框內，檢查信心度
-                if cell_obj['confidence'] < 0.04:
+                if cell_obj['confidence'] < 0.6:
                     removed_cells.append(cell_obj)
                 else:
                     filtered_cells.append(cell_obj)
@@ -940,7 +1001,7 @@ def process_image(image_path, model):
             # 檢查point是否在RFID框內
             if is_box_inside(point_obj, rfid_box):
                 # 在RFID框內，檢查信心度
-                if point_obj['confidence'] <= 0.05:
+                if point_obj['confidence'] <= 0.22:
                     removed_points.append(point_obj)
                 else:
                     filtered_points.append(point_obj)
