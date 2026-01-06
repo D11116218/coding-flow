@@ -49,8 +49,8 @@ FILTER_CONFIG = {
     
     # 6. 面積過濾
     'min_area_by_class': {
-        'RFID': 0.0001,   # RFID 最小面積比例（相對於圖片大小，降低：從 0.001 降到 0.0001）
-        'cell': 0.00001,   # cell 最小面積比例（降低：從 0.001 降到 0.0001）
+        'RFID': 0.0001,   # RFID 最小面積比例（相對於圖片大小，降到 0.0001）
+        'cell': 0.0001,   # cell 最小面積比例（降低：從 0.001 降到 0.0001）
         'point': 0.0001   # point 最小面積比例（降低：從 0.001 降到 0.0001）
     },
     'max_area_ratio': 0.99,  # 最大面積比例（相對於圖片大小）
@@ -654,7 +654,7 @@ def filter_detections(detections, imgwidth, imgheight):
             filtered_by_area += 1
             continue
         
-        # 3. 座標驗證（允許稍微超出範圍，因為 YOLO resize 可能導致邊界問題）
+        # 3. 座標驗證
         # 將座標限制在圖片範圍內
         obj['x1'] = max(0, min(obj['x1'], imgwidth - 1))
         obj['y1'] = max(0, min(obj['y1'], imgheight - 1))
@@ -662,7 +662,7 @@ def filter_detections(detections, imgwidth, imgheight):
         obj['y2'] = max(obj['y1'] + 1, min(obj['y2'], imgheight))
         obj['w'] = obj['x2'] - obj['x1']
         obj['h'] = obj['y2'] - obj['y1']
-        obj['area'] = obj['w'] * obj['h']  # 重新計算面積
+        obj['area'] = obj['w'] * obj['h']      # 重新計算面積
         obj['cx'] = obj['x1'] + obj['w'] // 2  # 重新計算中心點
         obj['cy'] = obj['y1'] + obj['h'] // 2
         
