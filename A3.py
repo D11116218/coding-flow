@@ -19,7 +19,7 @@ IMAGE_EXTENSIONS = ['*.jpg', '*.jpeg', '*.png', '*.JPG', '*.JPEG', '*.PNG']
 
 # YOLO 模型設定
 MODEL_SIZE = 'l'  # 'n'、's'、'm' 、'l'、'x'
-YOLO_MODEL_PATH = f"runs/DB_cell_detection12/weights/best.pt"
+YOLO_MODEL_PATH = f"runs/DB_cell_detection122/weights/best.pt"
 IMGSZ = 640  # 圖片尺寸，與訓練時一致
 
 # 預處理設定
@@ -131,7 +131,7 @@ def convert_to_grayscale_gimp(image):
     return gray
 
 def sharpen_image_unsharp_mask(image, radius, amount, threshold=0.0):
-    """
+    """fm 
     使用 Unsharp Mask 方法銳化圖片（GIMP 風格）
     使用與 GIMP 相同的公式：sharpened = original + (original - blurred) * amount
     
@@ -587,7 +587,7 @@ def apply_cross_class_nms(detected_objects, iou_threshold):
             if iou >= iou_threshold:
                 # RFID 與其他物件重疊
                 # 如果其他物件是 cell 或 point，且信心度 >= 0.5，則保留它們
-                if kept_obj['class'] in ['cell', 'point'] and kept_obj['confidence'] >= 0.5:
+                if kept_obj['class'] in ['cell', 'point'] and kept_obj['confidence'] >= 0.001:
                     # 保留 cell/point（信心度 >= 0.5），同時也保留 RFID
                     new_final_keep.append(kept_obj)
                 else:

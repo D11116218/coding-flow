@@ -117,7 +117,7 @@ PREPROCESS_PARAMS = {
     'denoise_templateWindowSize': 7, # 模板窗口大小
     'denoise_searchWindowSize': 21,  # 搜索窗口大小
     
-    # 對比度增強參數（用於加深黑點）
+    # 對比度增強參數（加深黑點）
     'enhance_contrast': True,        # 是否啟用對比度增強
     'contrast_alpha': 1.2,           # 對比度係數（1.0 = 無變化，>1.0 = 增強對比度，<1.0 = 降低對比度）
     'contrast_beta': 0,              # 亮度調整（0 = 無變化）
